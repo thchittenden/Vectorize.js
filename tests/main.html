@@ -1,0 +1,22 @@
+<html>
+<head>
+    <script src="../escodegen.js"></script>
+    <script src="../esprima.js"></script>
+    <script src="../vectorize.js"></script>
+    <script>
+        window.onload = function() {
+            function test() {
+                var x = 2;
+                var y = 3;
+                var z = x + y;
+                return z * z;
+            }
+            console.log(test());
+            test = vectorize.me(test);
+            console.log(test());
+        }
+    </script>
+</head>
+
+</html>
+
