@@ -3,7 +3,7 @@ TEST_STRINGS := $(patsubst %,<script src="%"></script>,$(TEST_FILES))
 
 all: tests.html
 
-tests.html: tests.html.template
+tests.html: $(TEST_FILES) tests.html.template
 	sed 's%$$(TESTS)%$(TEST_STRINGS)%' tests.html.template > tests.html
 
 debug:
