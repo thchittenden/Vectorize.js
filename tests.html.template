@@ -9,6 +9,29 @@
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
     <script src="http://code.jquery.com/qunit/qunit-1.17.1.js"></script>
+    <script src="esprima.js"></script>
+    <script src="escodegen.js"></script>
+    <script src="estraverse.js"></script>
+    <script src="esrecurse.js"></script>
+    <script src="simd.js"></script>
+    <script src="vectorize.js"></script>
+    <script>
+        tests = [];
+        function clone (arg) {
+            // Apparently this is efficient!
+            return JSON.parse(JSON.stringify(arg));
+        }
+        window.onload = function() {
+            for (var i = 0; i < tests.length; i++) {
+                var test = tests[i];
+                QUnit.test(test.name, function (assert) {
+                    var fn = test.fn; 
+                    var simdfn = vectorize.me(test.fn);
+                    assert.deepEqual(fn(clone(test.args)), simdfn(clone(test.args)));
+                });
+            }
+        };
+    </script>
     $(TESTS)
 </body>
 </html>
