@@ -4,6 +4,13 @@
     <meta charset="utf-8">
     <title>Vectorize.js Tests</title>
     <link rel="stylesheet" href="http://code.jquery.com/qunit/qunit-1.17.1.css">
+    <style>
+        .test-diff {
+            visibility: hidden;
+            height: 0px;
+            position: absolute;
+        }
+    </style>
 </head>
 <body>
     <div id="qunit"></div>
@@ -29,6 +36,7 @@
             };
         }
         window.onload = function() {
+            // Add tests.
             for (var i = 0; i < tests.length; i++) {
                 var test = tests[i];
                 var fn = test.fn;
