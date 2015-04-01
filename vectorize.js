@@ -142,11 +142,22 @@ vectorize = (function() {
     // 'vector' into 'arr[idxs.x]', 'arr[idxs.y]', etc...
     function vecWrite(arr, idxs, vector) {
         var writes = [];
+        
+        // If the index is not just an identifier (i.e. computation is 
+        // involved), cache the result to a temp so we don't repeat it four 
+        // times!
+        if (idxs.type !== 'Identifier') {
+            var temp = 'temp' + tempIdx++;
+            writes.push(assignment(ident(temp), idxs));
+            idxs = ident(temp); 
+        }
+
+        // Construct the writes: arr[idxs.x] = vec.x, ...
         for (var i = 0; i < vectorWidth; i++) {
             var accessor = vectorAccessors[i];
             var read = get(ident(vector), accessor); // vec.x, vec.y, ...
             var write = membership(ident(arr), get(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
-            writes[i] = assignment(write, read); 
+            writes.push(assignment(write, read)); 
         }
         return block(writes);
     }

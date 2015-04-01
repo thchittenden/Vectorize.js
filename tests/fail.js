@@ -37,3 +37,30 @@ tests.push({
     }
 
 });
+
+tests.push({
+    name: 'Cross Iteration Dependency',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        // Need to cache the result of args.length because otherwise this
+        // will infinite loop if we compile wrong because we'll constantly be
+        // extending the end of the array! Teehee.
+        var iters = args.length;
+        for (var i = 0; i < iters; i++) {
+            args[i+1] = 2*args[i]; 
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'Live-Out Dependency',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var x;
+        for (var i = 0; i < args.length; i++) {
+            x = args[i];
+        }
+        return x;
+    }
+});
