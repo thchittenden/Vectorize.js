@@ -21,14 +21,20 @@
             // Apparently this is efficient!
             return JSON.parse(JSON.stringify(arg));
         }
+        function makeTestFn (fn, simdfn, arg) {
+            // This is necessary as otherwise the closure always refers
+            // to the last test in the array! Bah!
+            return function (assert) {
+                assert.deepEqual(simdfn(clone(arg)), fn(clone(arg)));
+            };
+        }
         window.onload = function() {
             for (var i = 0; i < tests.length; i++) {
                 var test = tests[i];
-                QUnit.test(test.name, function (assert) {
-                    var fn = test.fn; 
-                    var simdfn = vectorize.me(test.fn);
-                    assert.deepEqual(fn(clone(test.args)), simdfn(clone(test.args)));
-                });
+                var fn = test.fn;
+                var simdfn = vectorize.me(test.fn);
+                var args = test.args;
+                QUnit.test(test.name, makeTestFn(fn, simdfn, args));
             }
         };
     </script>

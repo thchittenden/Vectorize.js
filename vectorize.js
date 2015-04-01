@@ -288,7 +288,7 @@ vectorize = (function() {
         esrecurse.visit(expr, {
             Identifier: function (node) {
                 // TODO: how can we handle IVs in a more elegant manner?
-                if (node in vectorVars) {
+                if (node.name in vectorVars) {
                     // This is already a SIMD vector. Do nothing.
                     assert(node.isvec);
                 } else if (node.name === iv.name) {
@@ -536,8 +536,11 @@ vectorize = (function() {
                 trace("Processing DECL: " + escodegen.generate(node));
                 if (node.id.type !== "Identifier") unsupported(node);
                 if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
+                    trace("    Vector: " + node.id.name);
                     vectorVars[node.id.name] = true;
-                }
+                } else {
+                    trace("    Not a vector.");
+                }   
             },
 
             IfStatement: unsupported,
@@ -595,6 +598,7 @@ vectorize = (function() {
         // we can return it.
         var ast = esprima.parse(fn.toString());
         ast = makeFunctionExpression(ast);
+        console.log(fn.toString());    
 
         // Vectorize loops.
         vectorizeLoops(ast);
