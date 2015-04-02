@@ -1,12 +1,22 @@
+TARGET := bin/vectorize.browser.js
+TEST_TARGET := tests.html
+TEST_TEMPLATE := tests.tpl
 TEST_FILES := $(wildcard tests/*.js)
 TEST_STRINGS := $(patsubst %,<script src="%"></script>,$(TEST_FILES))
+SRCS := $(wildcard *.js)
 
-all: tests.html
+all: $(TARGET) $(TEST_TARGET)
 
-tests.html: $(TEST_FILES) tests.html.template
-	sed 's%$$(TESTS)%$(TEST_STRINGS)%' tests.html.template > tests.html
+$(TARGET): $(SRCS)
+	@mkdir -p $(@D)
+	browserify $^ -o $@
+
+$(TEST_TARGET): $(TEST_FILES) $(TEST_TEMPLATE)
+	@mkdir -p $(@D)
+	sed 's%$$(TESTS)%$(TEST_STRINGS)%' $(TEST_TEMPLATE) > $@
 
 debug:
+	@echo "Sources: $(SRCS)"
 	@echo "Test Files: $(TEST_FILES)"
 	@echo "Test Strings: $(TEST_STRINGS)"
 
