@@ -19,18 +19,18 @@ vectorize = (function() {
     // SIMD properties.
     var vectorWidth = 4;
     var vectorAccessors = ['x', 'y', 'z', 'w'];
-    var vectorConstructor = util.membership(util.ident('SIMD'), util.ident('float32x4'), false); 
+    var vectorConstructor = util.property(util.ident('SIMD'), 'float32x4'); 
     var vectorOp = {}
-    vectorOp['+'] = util.membership(vectorConstructor, util.ident('add'), false);
-    vectorOp['-'] = util.membership(vectorConstructor, util.ident('sub'), false);
-    vectorOp['*'] = util.membership(vectorConstructor, util.ident('mul'), false);
-    vectorOp['/'] = util.membership(vectorConstructor, util.ident('div'), false);
-    vectorOp['<'] = util.membership(vectorConstructor, util.ident('lessThan'), false);
-    vectorOp['<='] = util.membership(vectorConstructor, util.ident('lessThanOrEqual'), false);
-    vectorOp['=='] = util.membership(vectorConstructor, util.ident('equal'), false);
-    vectorOp['!='] = util.membership(vectorConstructor, util.ident('notEqual'), false);
-    vectorOp['>='] = util.membership(vectorConstructor, util.ident('greaterThanOrEqual'), false);
-    vectorOp['>'] = util.membership(vectorConstructor, util.ident('greaterThan'), false);
+    vectorOp['+'] = util.property(vectorConstructor, 'add');
+    vectorOp['-'] = util.property(vectorConstructor, 'sub');
+    vectorOp['*'] = util.property(vectorConstructor, 'mul');
+    vectorOp['/'] = util.property(vectorConstructor, 'div');
+    vectorOp['<'] = util.property(vectorConstructor, 'lessThan');
+    vectorOp['<='] = util.property(vectorConstructor, 'lessThanOrEqual');
+    vectorOp['=='] = util.property(vectorConstructor, 'equal');
+    vectorOp['!='] = util.property(vectorConstructor, 'notEqual');
+    vectorOp['>='] = util.property(vectorConstructor, 'greaterThanOrEqual');
+    vectorOp['>'] = util.property(vectorConstructor, 'greaterThan');
     var tempIdx = 0; // Yikes!
 
     // Logging functions.
@@ -39,7 +39,7 @@ vectorize = (function() {
     }
 
     function splat (val) {
-        return util.call(util.membership(vectorConstructor, util.ident('splat'), false), [val]);
+        return util.call(util.property(vectorConstructor, 'splat'), [val]);
     }
 
     // Converts a function to a function expression so we can manipulate 
@@ -59,7 +59,7 @@ vectorize = (function() {
     function vecRead(vector, arr, idxs) {
         var args = [];
         for (var i = 0; i < vectorWidth; i++) {
-            args[i] = util.membership(util.ident(arr), util.get(idxs, vectorAccessors[i]), true);
+            args[i] = util.membership(util.ident(arr), util.property(idxs, vectorAccessors[i]), true);
         }
 
         // Return assignment 'vector = v(arr[idxs.x], arr[idxs.y], ...)'
@@ -83,8 +83,8 @@ vectorize = (function() {
         // Construct the writes: arr[idxs.x] = vec.x, ...
         for (var i = 0; i < vectorWidth; i++) {
             var accessor = vectorAccessors[i];
-            var read = util.get(util.ident(vector), accessor); // vec.x, vec.y, ...
-            var write = util.membership(util.ident(arr), util.get(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
+            var read = util.property(util.ident(vector), accessor); // vec.x, vec.y, ...
+            var write = util.membership(util.ident(arr), util.property(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
             writes.push(util.assignment(write, read)); 
         }
         return util.block(writes);

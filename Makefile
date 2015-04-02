@@ -9,11 +9,14 @@ all: $(TARGET) $(TEST_TARGET)
 
 $(TARGET): $(SRCS)
 	@mkdir -p $(@D)
-	browserify $^ -o $@
+	browserify --debug $^ -o $@
 
 $(TEST_TARGET): $(TEST_FILES) $(TEST_TEMPLATE)
 	@mkdir -p $(@D)
 	sed 's%$$(TESTS)%$(TEST_STRINGS)%' $(TEST_TEMPLATE) > $@
+
+clean:
+	rm -Rf bin/ $(TEST_TARGET)
 
 debug:
 	@echo "Sources: $(SRCS)"

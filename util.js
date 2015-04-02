@@ -85,7 +85,7 @@ util = (function(){
         }
     }
 
-    util.get = function (node, accessor) {
+    util.property = function (node, accessor) {
         return util.membership(node, util.ident(accessor), false);
     }
     
