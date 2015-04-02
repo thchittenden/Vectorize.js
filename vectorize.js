@@ -5,9 +5,6 @@ vectorize = (function() {
     estraverse = require('estraverse');
     esrecurse = require('esrecurse');
 
-    function clone(node1) {
-        return JSON.parse(JSON.stringify(node1));
-    }
     function unsupported(node) {
         throw ("unsupported operation: " + escodegen.generate(node))
     }
@@ -239,16 +236,16 @@ vectorize = (function() {
                     util.set(node, iv.vector);
                 } else {
                     // This is just a plain old variable. Splat it.
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                 }
             },
             Literal: function (node) {
                 // Need to splat literals.
-                util.set(node, splat(clone(node)));
+                util.set(node, splat(util.clone(node)));
             },
             UpdateExpression: function (node) {
                 if (!node.isvec) {
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                 } 
 
                 // You can only perform update expressions on identifiers. RIGHT?
@@ -262,7 +259,7 @@ vectorize = (function() {
             BinaryExpression: function (node) {
                 trace("Processing BINOP: " + escodegen.generate(node));
                 if (!node.isvec) {
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                     trace("    Splatting: " + escodegen.generate(node));
                     return;
                 }
@@ -278,7 +275,7 @@ vectorize = (function() {
             LogicalExpression: function (node) {
                 if (!node.isvec) { 
                     // Just a scalar logical, splat it.
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                     return;
                 } 
                 
@@ -287,7 +284,7 @@ vectorize = (function() {
             },
             UnaryExpression: function (node) {
                 if (!node.isvec) {
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                     return;
                 }
                 // Currently, no unary expressions are supported for floats.
@@ -299,7 +296,7 @@ vectorize = (function() {
                     // This is a non-vector member access. It may use a non-IV
                     // index or a non-computed index. Just splat it in this 
                     // case.
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 } 
@@ -374,7 +371,7 @@ vectorize = (function() {
                     if (node.left.type === "Identifier") {
                         delete vectorVars[node.left.name];
                     }
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 }
@@ -398,7 +395,7 @@ vectorize = (function() {
                 // If last statement is not a vector (node.isvec == false) then
                 // we need to splat this expression.
                 if (!node.isvec) {
-                    util.set(node, splat(clone(node)));
+                    util.set(node, splat(util.clone(node)));
                 }
             },
 
@@ -501,7 +498,7 @@ vectorize = (function() {
         });
 
         // Now we need to add the side effects to our statement.
-        util.set(stmt, util.block(preEffects.concat(clone(stmt)).concat(postEffects)));
+        util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects)));
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -538,8 +535,8 @@ vectorize = (function() {
         // be wrong if they don't iterate some multiple of 4 times.
         esrecurse.visit(ast, {
             ForStatement: function (node) {
-                var vectorloop = clone(node);
-                var scalarloop = clone(node);
+                var vectorloop = util.clone(node);
+                var scalarloop = util.clone(node);
                 
                 // Update the loop bounds so we perform as much of the loop in
                 // vectors as possible. This converts:

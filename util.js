@@ -88,6 +88,10 @@ util = (function(){
     util.get = function (node, accessor) {
         return util.membership(node, util.ident(accessor), false);
     }
+    
+    util.clone = function (node) {
+        return JSON.parse(JSON.stringify(node));
+    }
 
     return util;
 })()
