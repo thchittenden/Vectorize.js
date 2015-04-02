@@ -13,15 +13,18 @@ vectorize = (function() {
             value: val
         }
     }
+    function assign(left, right) {
+        return {
+            type: 'AssignmentExpression',
+            operator: '=',
+            left: left,
+            right: right
+        }
+    }
     function assignment(left, right) {
         return {
             type: 'ExpressionStatement',
-            expression: {
-                type: 'AssignmentExpression',
-                operator: '=',
-                left: left,
-                right: right
-            }
+            expression: assign(left, right)
         }
     }
     function membership(obj, prop, computed) {
@@ -489,7 +492,7 @@ vectorize = (function() {
         return true;
     }
     
-    function vectorizeStatement(stmt, ivname) {
+    function vectorizeStatement(stmt, iv) {
         
         // The current mapping of array accesses to their bound temps.
         // e.g. { a[i] -> temp1, b[2*i] -> temp2 }. 
@@ -524,16 +527,13 @@ vectorize = (function() {
 
         // Initialize maps with the index variable because someone is PROBABLY
         // gonna use it!
-        var temp = 'temp' + tempIdx++ + '_' + ivname;
+        var temp = 'temp' + tempIdx++ + '_' + iv.name;
         var indexVec = assignment(ident(temp), call(vectorConstructor, []));
         for (var i = 0; i < vectorWidth; i++) {
-            indexVec.expression.right.arguments[i] = binop(ident(ivname), '+', literal(i));   
+            indexVec.expression.right.arguments[i] = iv.step(i);   
         }
         preEffects.push(indexVec);
-        iv = {
-            name: ivname,
-            vector: ident(temp)
-        };
+        iv.vector = ident(temp);
 
         // Vectorize statements.
         esrecurse.visit(stmt, {
@@ -576,25 +576,55 @@ vectorize = (function() {
         set(stmt, block(preEffects.concat(clone(stmt)).concat(postEffects)));
     }
 
-    // This is pretty naive!
-    function updateLoopBounds(update) {
-        newupdate = {};
-        set(newupdate, update);
-        set(update, sequence([newupdate, newupdate, newupdate, newupdate]));
+    function updateLoopBounds(vecloop, loop, iv) {
+        
+        // Update the vectorized loop bounds and step. It is safe to iterate as
+        // long as the highest index we will access (iv.step(vectorWidth-1)) 
+        // does not violate the loop bounds.
+        vecloop.test = estraverse.replace(vecloop.test, {
+            leave: function (node) {
+                if (node.type === 'Identifier' && node.name === iv.name) {
+                    return iv.step(vectorWidth-1);
+                }
+            }
+        }); 
+        set(vecloop.update, assign(ident(iv.name), iv.step(vectorWidth)));
+        
+        // Remove the init from the scalar loop bounds so it continues where
+        // the vector loop left off.
+        loop.init = null;
     }
 
     function vectorizeLoops(ast) {
        
         // Construct our induction variable. This should be auto-detected in
         // the future!
-        var iv = "i";
+        var iv = {
+            name: "i",
+            step: function (i) {
+                return esprima.parse("i+"+i).body[0].expression;
+            }
+        };
 
         // We only know how to vectorize for loops at the moment. And they'll
         // be wrong if they don't iterate some multiple of 4 times.
         esrecurse.visit(ast, {
             ForStatement: function (node) {
-                updateLoopBounds(node.update);
-                vectorizeStatement(node.body, iv);
+                var vectorloop = clone(node);
+                var scalarloop = clone(node);
+                
+                // Update the loop bounds so we perform as much of the loop in
+                // vectors as possible. This converts:
+                //      for (var i = 0; i < a.length; i++) 
+                // into:
+                //      for (var i = 0; (i + 3) < a.length; i = i + 4)
+                //      for (; i < a.length; i++)
+                updateLoopBounds(vectorloop, scalarloop, iv);
+                vectorizeStatement(vectorloop.body, iv);
+
+                // Append the serial code to the vectorized code. This allows 
+                // us to process loops of size not mod 4.
+                set(node, block([vectorloop, scalarloop]));
             }
         });
 
