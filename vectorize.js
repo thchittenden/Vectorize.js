@@ -1,19 +1,21 @@
-vectorize = (function() {
-    
+util = (function(){
+    var util = {};
+
     // Utility functions for creating AST elements.
-    function ident(name) {
+    util.ident = function (name) {
         return {
             type: 'Identifier',
             name: name
-        }
+        };
     }
-    function literal(val) {
+    util.literal = function (val) {
         return {
             type: 'Literal',
             value: val
-        }
+        };
     }
-    function assign(left, right) {
+
+    util.assign = function (left, right) {
         return {
             type: 'AssignmentExpression',
             operator: '=',
@@ -21,51 +23,55 @@ vectorize = (function() {
             right: right
         }
     }
-    function assignment(left, right) {
+
+    util.assignment = function (left, right) {
         return {
             type: 'ExpressionStatement',
-            expression: assign(left, right)
-        }
+            expression: util.assign(left, right)
+        };
     }
-    function membership(obj, prop, computed) {
+
+    util.membership = function (obj, prop, computed) {
         return {
             type: 'MemberExpression',
             computed: computed,
             object: obj,
             property: prop
-        }
+        };
     }
-    function call(fn, args) {
+    util.call = function (fn, args) {
         return {
             type: 'CallExpression',
             callee: fn,
             arguments: args
-        }
+        };
     }
-    function binop(left, op, right) {
+
+    util.binop = function (left, op, right) {
         return {
             type: 'BinaryExpression',
             operator: op,
             left: left,
             right: right
-        }
+        };
     }
-    function block(stmts) {
+
+    util.block = function (stmts) {
         return {
             type: 'BlockStatement',
             body: stmts
-        }
+        };
     }
-    function splat(val) {
-        return call(membership(vectorConstructor, ident('splat'), false), [val]);
-    }
-    function sequence(exprs) {
+
+
+    util.sequence = function (exprs) {
         return {
             type: 'SequenceExpression',
             expressions: exprs
-        }
+        };
     }
-    function set(node1, node2) {
+
+    util.set = function (node1, node2) {
         // Clear unneeded properties.
         for (var prop in node1) {
             if (!(prop in node2)) {
@@ -78,14 +84,21 @@ vectorize = (function() {
             node1[prop] = node2[prop];
         }
     }
+
+    util.get = function (node, accessor) {
+        return util.membership(node, util.ident(accessor), false);
+    }
+
+    return util;
+})()
+
+vectorize = (function() {
+    
     function clone(node1) {
         return JSON.parse(JSON.stringify(node1));
     }
     function unsupported(node) {
         throw ("unsupported operation: " + escodegen.generate(node))
-    }
-    function get(node, accessor) {
-        return membership(node, ident(accessor), false);
     }
     function assert(cond) {
         if (!cond) throw "assertion failed"
@@ -98,23 +111,27 @@ vectorize = (function() {
     // SIMD properties.
     var vectorWidth = 4;
     var vectorAccessors = ['x', 'y', 'z', 'w'];
-    var vectorConstructor = membership(ident('SIMD'), ident('float32x4'), false); 
+    var vectorConstructor = util.membership(util.ident('SIMD'), util.ident('float32x4'), false); 
     var vectorOp = {}
-    vectorOp['+'] = membership(vectorConstructor, ident('add'), false);
-    vectorOp['-'] = membership(vectorConstructor, ident('sub'), false);
-    vectorOp['*'] = membership(vectorConstructor, ident('mul'), false);
-    vectorOp['/'] = membership(vectorConstructor, ident('div'), false);
-    vectorOp['<'] = membership(vectorConstructor, ident('lessThan'), false);
-    vectorOp['<='] = membership(vectorConstructor, ident('lessThanOrEqual'), false);
-    vectorOp['=='] = membership(vectorConstructor, ident('equal'), false);
-    vectorOp['!='] = membership(vectorConstructor, ident('notEqual'), false);
-    vectorOp['>='] = membership(vectorConstructor, ident('greaterThanOrEqual'), false);
-    vectorOp['>'] = membership(vectorConstructor, ident('greaterThan'), false);
+    vectorOp['+'] = util.membership(vectorConstructor, util.ident('add'), false);
+    vectorOp['-'] = util.membership(vectorConstructor, util.ident('sub'), false);
+    vectorOp['*'] = util.membership(vectorConstructor, util.ident('mul'), false);
+    vectorOp['/'] = util.membership(vectorConstructor, util.ident('div'), false);
+    vectorOp['<'] = util.membership(vectorConstructor, util.ident('lessThan'), false);
+    vectorOp['<='] = util.membership(vectorConstructor, util.ident('lessThanOrEqual'), false);
+    vectorOp['=='] = util.membership(vectorConstructor, util.ident('equal'), false);
+    vectorOp['!='] = util.membership(vectorConstructor, util.ident('notEqual'), false);
+    vectorOp['>='] = util.membership(vectorConstructor, util.ident('greaterThanOrEqual'), false);
+    vectorOp['>'] = util.membership(vectorConstructor, util.ident('greaterThan'), false);
     var tempIdx = 0; // Yikes!
 
     // Logging functions.
     function trace(str) {
         console.log(str);
+    }
+
+    function splat (val) {
+        return util.call(util.membership(vectorConstructor, util.ident('splat'), false), [val]);
     }
 
     // Converts a function to a function expression so we can manipulate 
@@ -134,11 +151,11 @@ vectorize = (function() {
     function vecRead(vector, arr, idxs) {
         var args = [];
         for (var i = 0; i < vectorWidth; i++) {
-            args[i] = membership(ident(arr), get(idxs, vectorAccessors[i]), true);
+            args[i] = util.membership(util.ident(arr), util.get(idxs, vectorAccessors[i]), true);
         }
 
         // Return assignment 'vector = v(arr[idxs.x], arr[idxs.y], ...)'
-        return assignment(ident(vector), call(vectorConstructor, args));
+        return util.assignment(util.ident(vector), util.call(vectorConstructor, args));
     }
 
     // Creates a statement that reads four elements from the SIMD vector 
@@ -151,18 +168,18 @@ vectorize = (function() {
         // times!
         if (idxs.type !== 'Identifier') {
             var temp = 'temp' + tempIdx++;
-            writes.push(assignment(ident(temp), idxs));
-            idxs = ident(temp); 
+            writes.push(util.assignment(util.ident(temp), idxs));
+            idxs = util.ident(temp); 
         }
 
         // Construct the writes: arr[idxs.x] = vec.x, ...
         for (var i = 0; i < vectorWidth; i++) {
             var accessor = vectorAccessors[i];
-            var read = get(ident(vector), accessor); // vec.x, vec.y, ...
-            var write = membership(ident(arr), get(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
-            writes.push(assignment(write, read)); 
+            var read = util.get(util.ident(vector), accessor); // vec.x, vec.y, ...
+            var write = util.membership(util.ident(arr), util.get(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
+            writes.push(util.assignment(write, read)); 
         }
-        return block(writes);
+        return util.block(writes);
     }
 
     // Augments an expression AST with a property 'isvec' which indicates 
@@ -172,7 +189,7 @@ vectorize = (function() {
         // Create a private set as we may need to modify it as we traverse
         // the AST to keep track of assignment expressions.
         var myVectorVars = {};
-        set(myVectorVars, vectorVars);
+        util.set(myVectorVars, vectorVars);
 
         esrecurse.visit(expr, {
             ThisExpression: function (node) {
@@ -308,19 +325,19 @@ vectorize = (function() {
                 } else if (node.name === iv.name) {
                     // This is the induction variable. Use the IV vector.
                     assert(node.isvec);
-                    set(node, iv.vector);
+                    util.set(node, iv.vector);
                 } else {
                     // This is just a plain old variable. Splat it.
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                 }
             },
             Literal: function (node) {
                 // Need to splat literals.
-                set(node, splat(clone(node)));
+                util.set(node, splat(clone(node)));
             },
             UpdateExpression: function (node) {
                 if (!node.isvec) {
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                 } 
 
                 // You can only perform update expressions on identifiers. RIGHT?
@@ -334,7 +351,7 @@ vectorize = (function() {
             BinaryExpression: function (node) {
                 trace("Processing BINOP: " + escodegen.generate(node));
                 if (!node.isvec) {
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                     trace("    Splatting: " + escodegen.generate(node));
                     return;
                 }
@@ -344,13 +361,13 @@ vectorize = (function() {
                 if (!(node.operator in vectorOp)) unsupported(node);
                 this.visit(node.left);
                 this.visit(node.right);
-                set(node, call(vectorOp[node.operator], [node.left, node.right]));
+                util.set(node, util.call(vectorOp[node.operator], [node.left, node.right]));
                 trace("    Vector: " + escodegen.generate(node));
             },
             LogicalExpression: function (node) {
                 if (!node.isvec) { 
                     // Just a scalar logical, splat it.
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                     return;
                 } 
                 
@@ -359,7 +376,7 @@ vectorize = (function() {
             },
             UnaryExpression: function (node) {
                 if (!node.isvec) {
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                     return;
                 }
                 // Currently, no unary expressions are supported for floats.
@@ -371,7 +388,7 @@ vectorize = (function() {
                     // This is a non-vector member access. It may use a non-IV
                     // index or a non-computed index. Just splat it in this 
                     // case.
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 } 
@@ -404,7 +421,7 @@ vectorize = (function() {
                     // In either of these cases, we do not want to add it to the
                     // preeffects array, we just want to use the most recent tmep.
                     var temp = vectorMap[nodekey(node)];
-                    set(node, ident(temp.name));
+                    util.set(node, util.ident(temp.name));
 
                 } else if (mode === WRITE) {
                     // Performing a write. Write to a temporary so the 
@@ -433,7 +450,7 @@ vectorize = (function() {
                         postEffects.push(vecWrite(node.object.name, node.property, temp.name));
                         temp.inPostEffects = true;
                     }
-                    set(node, ident(temp.name));
+                    util.set(node, util.ident(temp.name));
 
                 }
                 trace("    Vector: " + escodegen.generate(node));
@@ -446,7 +463,7 @@ vectorize = (function() {
                     if (node.left.type === "Identifier") {
                         delete vectorVars[node.left.name];
                     }
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 }
@@ -470,7 +487,7 @@ vectorize = (function() {
                 // If last statement is not a vector (node.isvec == false) then
                 // we need to splat this expression.
                 if (!node.isvec) {
-                    set(node, splat(clone(node)));
+                    util.set(node, splat(clone(node)));
                 }
             },
 
@@ -528,12 +545,12 @@ vectorize = (function() {
         // Initialize maps with the index variable because someone is PROBABLY
         // gonna use it!
         var temp = 'temp' + tempIdx++ + '_' + iv.name;
-        var indexVec = assignment(ident(temp), call(vectorConstructor, []));
+        var indexVec = util.assignment(util.ident(temp), util.call(vectorConstructor, []));
         for (var i = 0; i < vectorWidth; i++) {
             indexVec.expression.right.arguments[i] = iv.step(i);   
         }
         preEffects.push(indexVec);
-        iv.vector = ident(temp);
+        iv.vector = util.ident(temp);
 
         // Vectorize statements.
         esrecurse.visit(stmt, {
@@ -573,7 +590,7 @@ vectorize = (function() {
         });
 
         // Now we need to add the side effects to our statement.
-        set(stmt, block(preEffects.concat(clone(stmt)).concat(postEffects)));
+        util.set(stmt, util.block(preEffects.concat(clone(stmt)).concat(postEffects)));
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -588,7 +605,7 @@ vectorize = (function() {
                 }
             }
         }); 
-        set(vecloop.update, assign(ident(iv.name), iv.step(vectorWidth)));
+        util.set(vecloop.update, util.assign(util.ident(iv.name), iv.step(vectorWidth)));
         
         // Remove the init from the scalar loop bounds so it continues where
         // the vector loop left off.
@@ -624,7 +641,7 @@ vectorize = (function() {
 
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
-                set(node, block([vectorloop, scalarloop]));
+                util.set(node, util.block([vectorloop, scalarloop]));
             }
         });
 
