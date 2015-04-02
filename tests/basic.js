@@ -64,3 +64,28 @@ tests.push({
         return c;
     }
 });
+
+tests.push({
+    name: 'Assignment Foo Two',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var x;
+        for (var i = 0; i < args.length; i++) {
+            x = args[i];
+            args[i] = x + 2;
+        }
+    }
+});
+
+tests.push({
+    name: 'Hidden Assignment',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = args[i];
+            var y = (x = 2, args[i]);
+            args[i] = x + 1;
+        }
+        return args;
+    }
+});

@@ -91,20 +91,16 @@ vectorize = (function() {
     }
 
     // Augments an expression AST with a property 'isvec' which indicates 
-    // whether that node needs to be vectorized or not.
+    // whether that node needs to be vectorized or not. Updates the vectorVars
+    // argument to reflect the vector variables live AFTER the expression.
     function markVectorExpressions(expr, iv, vectorVars) {
         
-        // Create a private set as we may need to modify it as we traverse
-        // the AST to keep track of assignment expressions.
-        var myVectorVars = {};
-        util.set(myVectorVars, vectorVars);
-
         esrecurse.visit(expr, {
             ThisExpression: function (node) {
                 node.isvec = false;
             },
             Identifier: function (node) {
-                node.isvec = node.name === iv.name || node.name in myVectorVars;
+                node.isvec = node.name === iv.name || node.name in vectorVars;
             },
             Literal: function (node) {
                 node.isvec = false;
@@ -152,7 +148,7 @@ vectorize = (function() {
                 // This way, when we visit the LHS it will only be marked as a
                 // vector if it is a vector MemberExpression.
                 if (node.left.type === "Identifier") {
-                    delete myVectorVars[node.left.name];
+                    delete vectorVars[node.left.name];
                 }
                 this.visit(node.left);
 
@@ -163,7 +159,7 @@ vectorize = (function() {
                 // If this node was a vector and the LHS was an identifier, 
                 // that identifier is now a vector.
                 if (node.isvec && node.left.type === "Identifier") {
-                    myVectorVars[node.left.name] = true;
+                    vectorVars[node.left.name] = true;
                 }   
             },
             SequenceExpression: function (node) {
@@ -226,17 +222,21 @@ vectorize = (function() {
         // it is a vector.
         esrecurse.visit(expr, {
             Identifier: function (node) {
-                // TODO: how can we handle IVs in a more elegant manner?
-                if (node.name in vectorVars) {
-                    // This is already a SIMD vector. Do nothing.
-                    assert(node.isvec);
-                } else if (node.name === iv.name) {
-                    // This is the induction variable. Use the IV vector.
-                    assert(node.isvec);
-                    util.set(node, iv.vector);
-                } else {
-                    // This is just a plain old variable. Splat it.
-                    util.set(node, splat(util.clone(node)));
+                // We only need to parallelize the identifier if we're 
+                // reading. Otherwise it will just overwrite it. 
+                if (mode === READ) {
+                    if (node.isvec) {
+                        // If what we're reading is already a vector, we don't
+                        // need to do anything unless its the induction 
+                        // variable in which case we need to replace it with
+                        // the vector variable.
+                        if (node.name === iv.name) {
+                            util.set(node, iv.vector);
+                        }
+                    } else {
+                        // This is just a plain old variable. Splat it.
+                        util.set(node, splat(util.clone(node)));
+                    }
                 }
             },
             Literal: function (node) {
@@ -322,7 +322,6 @@ vectorize = (function() {
                         this.visit(node.property);
                         preEffects.push(vecRead(temp, node.object.name, node.property));
                         vectorMap[nodekey(node)] = { name: temp, inPostEffects: false};
-                        vectorVars[temp] = true;
                     }
 
                     // We have either already read from or written to this node.
@@ -347,14 +346,16 @@ vectorize = (function() {
                         // to the post effects below.
                         temp = 'temp' + tempIdx++ + '_' + node.object.name;
                         vectorMap[nodekey(node)] = { name: temp, inPostEffects: false};
-                        vectorVars[temp] = true;
                     }
                     
                     var temp = vectorMap[nodekey(node)];
                     if (!temp.inPostEffects) {
                         // This is the first write to this array, add it to the
                         // postEffects array.
+                        var oldMode = mode;
+                        mode = READ;
                         this.visit(node.property);
+                        mode = oldMode;
                         postEffects.push(vecWrite(node.object.name, node.property, temp.name));
                         temp.inPostEffects = true;
                     }
@@ -366,11 +367,6 @@ vectorize = (function() {
             AssignmentExpression: function (node) {
                 trace("Processing ASGN: " + escodegen.generate(node));
                 if (!node.isvec) {
-                    // Assignment of scalars. Remove the LHS from the set of
-                    // vector variables and splat the result..
-                    if (node.left.type === "Identifier") {
-                        delete vectorVars[node.left.name];
-                    }
                     util.set(node, splat(util.clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
