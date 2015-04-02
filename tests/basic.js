@@ -89,3 +89,17 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Sequences',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = (args[i] = 3, y = 2, 4);
+            args[i] = x;
+            x = (args[i] = (args[i] = 3) + 2);
+            args[i] = x; // Should be 5.
+        }
+        return args;
+    }
+});

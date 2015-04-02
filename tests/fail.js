@@ -1,5 +1,4 @@
 // These are tests known to fail!
-
 tests.push({
     name: 'Vector Length 9',
     args: [0, 1, 2, 3, 4, 5, 6, 7, 8],
@@ -62,5 +61,17 @@ tests.push({
             x = args[i];
         }
         return x;
+    }
+});
+
+tests.push({
+    name: 'Reduction', 
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var sum = 0;
+        for (var i = 0; i < args.length; i++) {
+            sum += args[i];
+        }
+        return sum;
     }
 });

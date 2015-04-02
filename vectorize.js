@@ -166,25 +166,10 @@ vectorize = (function() {
                 // The value of a sequence expression is the value of the last
                 // expression in the sequence. Thus, if the last expression is
                 // a vector, the entire sequence is a vector.
-                var somevec = false;
                 for (var i = 0; i < node.expressions.length; i++) {
                     this.visit(node.expressions[i]);
-                    somevec = somevec || node.expressions[i].isvec;
                 }
                 node.isvec = node.expressions[node.expressions.length - 1].isvec;
-
-                // There is actually an issue with sequence expressions. Since
-                // the entire expression will only be marked as a vector if the
-                // last expression is a vector, then we will not call recurse 
-                // into it in vectorizeExpression if the last statement is not 
-                // a vector and it is used, say, in a non-vector binary 
-                // expression:
-                //      var x = 2 + (y = a[i], 3);
-                // Due to this, we currently mark them as unsupported if any of
-                // the subexpressions are vectors and the final one is not.
-                if (!node.isvec && somevec) {
-                    unsupported(node);
-                }
             },
 
             // Unsupported as of now. Can they be supported?
@@ -360,7 +345,6 @@ vectorize = (function() {
                         temp.inPostEffects = true;
                     }
                     util.set(node, util.ident(temp.name));
-
                 }
                 trace("    Vector: " + escodegen.generate(node));
             },
