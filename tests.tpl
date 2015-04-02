@@ -16,12 +16,7 @@
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
     <script src="http://code.jquery.com/qunit/qunit-1.17.1.js"></script>
-    <script src="esprima.js"></script>
-    <script src="escodegen.js"></script>
-    <script src="estraverse.js"></script>
-    <script src="esrecurse.js"></script>
-    <script src="simd.js"></script>
-    <script src="vectorize.js"></script>
+    <script src="bin/vectorize.browser.js"></script>
     <script>
         tests = [];
         function clone (arg) {
