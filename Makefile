@@ -1,7 +1,7 @@
 TARGET := bin/vectorize.browser.js
 TEST_TARGET := tests.html
 TEST_TEMPLATE := tests.tpl
-TEST_FILES := $(wildcard tests/*.js)
+TEST_FILES := $(wildcard tests/*.js) $(wildcard benchmarks/*.js)
 TEST_STRINGS := $(patsubst %,<script src="%"></script>,$(TEST_FILES))
 SRCS := $(wildcard *.js)
 
