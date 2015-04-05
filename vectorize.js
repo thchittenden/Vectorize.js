@@ -5,6 +5,9 @@ vectorize = (function() {
     estraverse = require('estraverse');
     esrecurse = require('esrecurse');
 
+
+vectorize = (function() {
+    
     function unsupported(node) {
         throw ("unsupported operation: " + escodegen.generate(node))
     }
@@ -562,3 +565,63 @@ vectorize = (function() {
     vectorize.me = vectorizeFunction;
     return vectorize;
 }());
+
+var dependence = (function() {
+    var dependence = {};
+
+    // Convert for loop operatation in to a canonical representation.
+    function updateToAssgn(expr) {
+        var operator = expr.operator;
+        switch (expr.type) { 
+            case 'UpdateExpression':
+                var op = operator === '++' ? '+' : '--';
+                return util.assign(expr.argument, util.binop(expr.argument, op, util.literal(1)));
+
+            case 'AssignmentExpression':
+                if (operator === '=') {
+                    return expr;
+                }
+
+                // Extract op from 'op=' style assignments.
+                var op = operator.substring(0, operator.indexOf('='));
+                return util.assign(expr.left, util.binop(expr.right, op, expr.left));
+
+            default:
+                return null;
+        }
+    }
+
+    dependence.mkStepFn = function(ast, iv) {
+        var update;
+        esrecurse.visit(ast, {
+            ForStatement: function(node) {  
+                update = node.update;
+            }
+        });
+        // Canonicalized form of update
+        var canon = updateToAssgn(update);
+        var step = function (i) {
+            if (i === 0) {
+                return util.clone(canon.right);
+            }
+
+            return estraverse.replace(clone(canon.right), {
+                leave: function(node) {
+                    if (node.type === 'Identifier' &&
+                        node.name === canon.left.name) {
+                        var prev = step(i - 1);
+                        return step(i -1);
+                    }
+                }
+            });
+        }
+        return step;
+    }
+
+
+    // Detects the dependence between, 
+    function detect(ast, iv) {
+    }
+
+    return dependence;
+})()
