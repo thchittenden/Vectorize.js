@@ -6,7 +6,7 @@ TEST_FILES := $(wildcard tests/*.js)
 TEST_STRINGS := $(patsubst %,<script src="../%"></script>,$(TEST_FILES))
 BENCH_TARGET := benchmarks/benchmarks.html
 BENCH_TEMPLATE := benchmarks/benchmarks.tpl
-BENCH_FILES := $(wildcard benchmarks/*.js)
+BENCH_FILES := $(filter-out benchmarks.js, $(wildcard benchmarks/*.js))
 BENCH_STRINGS := $(patsubst %,<script src="../%"></script>,$(BENCH_FILES))
 
 all: $(TARGET) $(BENCH_TARGET) $(TEST_TARGET)

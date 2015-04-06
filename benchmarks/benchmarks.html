@@ -21,6 +21,7 @@
     <script src="../bin/vectorize.browser.js"></script>
     <script>
         benchmarks = [];
+        function async (fn, done) { setTimeout (function() { fn(); done(); }, 0) }
         function bench (benchfn, args) {
             var bench = new Benchmark(function () { benchfn(args) });
             bench.run();
@@ -28,10 +29,10 @@
             var moe = 100 * bench.stats.moe / bench.times.period;
             return period.toFixed(3) + "ms ± " + moe.toFixed(2) + "%";
         };
-        function makeBenchFn (fn, simdfn, args) {
+        function makeBenchFn (scalarFn, vectorFn, args) {
             return function (assert) {
-                assert.ok(true, "Scalar: " + bench(fn, args));
-                assert.ok(true, "Vector: " + bench(simdfn, args));
+                async(function() { assert.ok(true, "Scalar: " + bench(scalarFn, args)) }, assert.async());
+                async(function() { assert.ok(true, "Vector: " + bench(vectorFn, args)) }, assert.async());
             };
         }
         window.onload = function() {
