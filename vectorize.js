@@ -355,13 +355,24 @@ vectorize = (function() {
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 }
-                
-                var oldMode = mode;
-                mode = READ;
-                this.visit(node.right);
-                mode = WRITE;
-                this.visit(node.left);
-                mode = oldMode;
+
+                if (node.operator === '=') {
+                    // Regular assignment. This does not need to change.
+                    var oldMode = mode;
+                    mode = READ;
+                    this.visit(node.right);
+                    mode = WRITE;
+                    this.visit(node.left);
+                    mode = oldMode;
+                } else {
+                    // Operator assignment. This needs to be transformed into
+                    // canonical representation. Do so then revisit.
+                    var isvec = node.isvec;
+                    util.set(node, util.canonAssignment(node));
+                    node.isvec = isvec;          // The assignment.
+                    node.right.isvec = isvec;    // The RHS.
+                    this.visit(node);
+                }
             },
             SequenceExpression: function (node) {
                 // Visit all subexpressions in case they contain some vector 
@@ -458,6 +469,11 @@ vectorize = (function() {
                     trace("    Not a vector.");
                 }   
             },
+            
+            ForStatement: function (node) {
+                trace("Processing FOR: " + escodegen.generate(node));
+                this.visit(node.body);
+            },
 
             IfStatement: unsupported,
             LabeledStatement: unsupported,
@@ -469,7 +485,6 @@ vectorize = (function() {
             ThrowStatement: unsupported,
             WhileStatement: unsupported,
             DoWhileStatement: unsupported,
-            ForStatement: unsupported,
             ForInStatement: unsupported,
             ForOfStatement: unsupported,
             LetStatement: unsupported,

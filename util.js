@@ -93,6 +93,29 @@ util = (function(){
         return JSON.parse(JSON.stringify(node));
     }
 
+    util.canonAssignment = function (expr) {
+        var operator = expr.operator;
+        switch (expr.type) { 
+            case 'UpdateExpression':
+                // This is not completely correct as it does not preserve
+                // effect order. i++ should be generated to (i = i + 1, i - 1).
+                var op = operator === '++' ? '+' : '-';
+                return util.assign(expr.argument, util.binop(util.clone(expr.argument), op, util.literal(1)));
+
+            case 'AssignmentExpression':
+                if (operator === '=') {
+                    return expr;
+                }
+
+                // Extract op from 'op=' style assignments.
+                var op = operator.substring(0, operator.indexOf('='));
+                return util.assign(expr.left, util.binop(util.clone(expr.left), op, expr.right));
+
+            default:
+                return null;
+        }
+    }
+
     return util;
 })()
 

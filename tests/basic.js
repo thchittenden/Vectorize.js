@@ -52,6 +52,20 @@ tests.push({
 });
 
 tests.push({
+    name: 'Assignment Ops',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            args[i] += 3;
+            args[i] -= 2;
+            args[i] *= 4;
+            args[i] /= 2;
+        }   
+        return args;
+    }
+});
+
+tests.push({
     name: 'Recursive Index',
     args: { args1: [0, 0, 7, 7, 4, 4, 0, 0], args2: [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
     fn: function fn (args) {
@@ -99,6 +113,17 @@ tests.push({
             args[i] = x;
             x = (args[i] = (args[i] = 3) + 2);
             args[i] = x; // Should be 5.
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'IV != i',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var j = 0; j < args.length; j++) {
+            args[j] = args[j] + 1;
         }
         return args;
     }
