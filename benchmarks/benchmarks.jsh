@@ -1,3 +1,5 @@
+#!/usr/local/bin/js
+
 benchmarks = [];
 load('../bin/vectorize.browser.js');
 load('../lib/benchmark.js');
