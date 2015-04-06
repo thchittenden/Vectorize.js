@@ -286,6 +286,10 @@ vectorize = (function() {
                     return;
                 } 
                 
+                // Cache the key since it will change when we visit the 
+                // node property.
+                var key = nodekey(node);
+
                 // Otherwise, this is a vector member expression. When 
                 // processing a member expression, it will either be when 
                 // reading from it or writing to it. This changes our behavior:
@@ -297,8 +301,8 @@ vectorize = (function() {
                     // We want to compile this to:
                     //      temp1 = vec(a[i], a[i+1], a[i+2], a[i+3]);
                     //      x = temp1;
-                    
-                    if (!(nodekey(node) in vectorMap)) {
+                   
+                    if (!(key in vectorMap)) {
                         // We have not seen this access before. Create a new
                         // temporary and add it to the preEffects.
                         var temp = 'temp' + tempIdx++ + '_' + node.object.name;
@@ -306,13 +310,13 @@ vectorize = (function() {
                         // Visit the property. This is now a vector.
                         this.visit(node.property);
                         preEffects.push(vecRead(temp, node.object.name, node.property));
-                        vectorMap[nodekey(node)] = { name: temp, inPostEffects: false};
+                        vectorMap[key] = { name: temp, inPostEffects: false};
                     }
 
                     // We have either already read from or written to this node.
                     // In either of these cases, we do not want to add it to the
                     // preeffects array, we just want to use the most recent tmep.
-                    var temp = vectorMap[nodekey(node)];
+                    var temp = vectorMap[key];
                     util.set(node, util.ident(temp.name));
 
                 } else if (mode === WRITE) {
@@ -325,15 +329,15 @@ vectorize = (function() {
                     //      a' = (temp1 = splat(2)) + splat(3);
                     //      b[i] = temp1.x; b[i+1] = temp1.y; ...
 
-                    if (!(nodekey(node) in vectorMap)) {
+                    if (!(key in vectorMap)) {
                         // We have not seen this write before. Create a new
                         // temporary and add it to the maps. It will be added
                         // to the post effects below.
                         temp = 'temp' + tempIdx++ + '_' + node.object.name;
-                        vectorMap[nodekey(node)] = { name: temp, inPostEffects: false};
+                        vectorMap[key] = { name: temp, inPostEffects: false};
                     }
                     
-                    var temp = vectorMap[nodekey(node)];
+                    var temp = vectorMap[key];
                     if (!temp.inPostEffects) {
                         // This is the first write to this array, add it to the
                         // postEffects array.
