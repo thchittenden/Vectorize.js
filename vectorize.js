@@ -5,9 +5,6 @@ vectorize = (function() {
     estraverse = require('estraverse');
     esrecurse = require('esrecurse');
 
-
-vectorize = (function() {
-    
     function unsupported(node) {
         throw ("unsupported operation: " + escodegen.generate(node))
     }
@@ -505,19 +502,11 @@ vectorize = (function() {
 
     function vectorizeLoops(ast) {
        
-        // Construct our induction variable. This should be auto-detected in
-        // the future!
-        var iv = {
-            name: "i",
-            step: function (i) {
-                return esprima.parse("i+"+i).body[0].expression;
-            }
-        };
-
         // We only know how to vectorize for loops at the moment. And they'll
         // be wrong if they don't iterate some multiple of 4 times.
         esrecurse.visit(ast, {
             ForStatement: function (node) {
+                var iv = dependence.detectIV(node);
                 var vectorloop = util.clone(node);
                 var scalarloop = util.clone(node);
                 
@@ -566,62 +555,3 @@ vectorize = (function() {
     return vectorize;
 }());
 
-var dependence = (function() {
-    var dependence = {};
-
-    // Convert for loop operatation in to a canonical representation.
-    function updateToAssgn(expr) {
-        var operator = expr.operator;
-        switch (expr.type) { 
-            case 'UpdateExpression':
-                var op = operator === '++' ? '+' : '--';
-                return util.assign(expr.argument, util.binop(expr.argument, op, util.literal(1)));
-
-            case 'AssignmentExpression':
-                if (operator === '=') {
-                    return expr;
-                }
-
-                // Extract op from 'op=' style assignments.
-                var op = operator.substring(0, operator.indexOf('='));
-                return util.assign(expr.left, util.binop(expr.right, op, expr.left));
-
-            default:
-                return null;
-        }
-    }
-
-    dependence.mkStepFn = function(ast, iv) {
-        var update;
-        esrecurse.visit(ast, {
-            ForStatement: function(node) {  
-                update = node.update;
-            }
-        });
-        // Canonicalized form of update
-        var canon = updateToAssgn(update);
-        var step = function (i) {
-            if (i === 0) {
-                return util.clone(canon.right);
-            }
-
-            return estraverse.replace(clone(canon.right), {
-                leave: function(node) {
-                    if (node.type === 'Identifier' &&
-                        node.name === canon.left.name) {
-                        var prev = step(i - 1);
-                        return step(i -1);
-                    }
-                }
-            });
-        }
-        return step;
-    }
-
-
-    // Detects the dependence between, 
-    function detect(ast, iv) {
-    }
-
-    return dependence;
-})()
