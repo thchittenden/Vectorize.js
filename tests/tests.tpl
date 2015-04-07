@@ -16,7 +16,8 @@
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
     <script src="http://code.jquery.com/qunit/qunit-1.17.1.js"></script>
-    <script src="bin/vectorize.browser.js"></script>
+    <script src="../lib/simd.js"></script>
+    <script src="../bin/vectorize.browser.js"></script>
     <script>
         tests = [];
         function clone (arg) {
@@ -32,12 +33,10 @@
         }
         window.onload = function() {
             // Add tests.
+            QUnit.module("Tests");
             for (var i = 0; i < tests.length; i++) {
                 var test = tests[i];
-                var fn = test.fn;
-                var simdfn = vectorize.me(test.fn);
-                var args = test.args;
-                QUnit.test(test.name, makeTestFn(fn, simdfn, args));
+                QUnit.test(test.name, makeTestFn(test.fn, vectorize.me(test.fn), test.args));
             }
         };
     </script>
