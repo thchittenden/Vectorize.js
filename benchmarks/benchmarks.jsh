@@ -5,6 +5,9 @@ load('../bin/vectorize.browser.js');
 load('../lib/benchmark.js');
 load('map_basic.js');
 
+// Whether we should output the functions or not.
+var debug = scriptArgs.indexOf('-debug') > -1;
+
 // We don't want to see output from the algorithm.
 console.log = function (args) { };
 
@@ -39,6 +42,11 @@ for (i in benchmarks) {
     var vectorRes = bench(vectorFn, benchmark.args);
 
     print('Testing: ' + benchmark.name);
+    if (debug) {
+        print('Scalar: ' + scalarFn);
+        print('Vector: ' + vectorFn);
+        if (handFn !== undefined) print('Hand:   ' + handFn);
+    }
     print('Scalar: ' + scalarRes.period.toFixed(3) + 'ms ± ' + scalarRes.moe.toFixed(3) + '%');
     print('Vector: ' + vectorRes.period.toFixed(3) + 'ms ± ' + vectorRes.moe.toFixed(3) + '%');
     if (handFn !== undefined) {
