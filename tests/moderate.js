@@ -23,3 +23,33 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Benchmark Test Nested Loops IV',
+    args: new Array(100),
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var tmp = args[i];
+            for (var j = 0; j < 1000; j++) {
+                tmp += j;
+            }
+            args[i] = tmp;
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'Benchmark Test Nested Loops Constant',
+    args: new Array(100),
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var tmp = args[i];
+            for (var j = 0; j < 1000; j++) {
+                tmp += 1;
+            }
+            args[i] = tmp;
+        }
+        return args;
+    }
+});

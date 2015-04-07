@@ -54,8 +54,8 @@ vectorize = (function() {
         return ast;
     }
 
-    // Create a statement that reads four elements of 'arr' into a SIMD vector
-    // and assigns it to 'vector'.
+    // Create a statement that declares 'vector' and assigns four elements of
+    // 'arr' to it.
     function vecRead(vector, arr, idxs) {
         var args = [];
         for (var i = 0; i < vectorWidth; i++) {
@@ -63,7 +63,7 @@ vectorize = (function() {
         }
 
         // Return assignment 'vector = v(arr[idxs.x], arr[idxs.y], ...)'
-        return util.assignment(util.ident(vector), util.call(vectorConstructor, args));
+        return util.declassignment(util.ident(vector), util.call(vectorConstructor, args));
     }
 
     // Creates a statement that reads four elements from the SIMD vector 
@@ -88,6 +88,21 @@ vectorize = (function() {
             writes.push(util.assignment(write, read)); 
         }
         return util.block(writes);
+    }
+
+    // Converts all assignemnts of the form x *= y into x = x * y. This makes
+    // processing much easier!
+    function canonicalizeAssignments(expr) {
+        esrecurse.visit(expr, {
+            AssignmentExpression: function (asgn) {
+                // In case there are nested assignments...
+                this.visit(asgn.right);
+                this.visit(asgn.left);
+
+                // Update our current node.
+                util.set(asgn, util.canonAssignment(asgn));
+            }
+        });
     }
 
     // Augments an expression AST with a property 'isvec' which indicates 
@@ -147,6 +162,7 @@ vectorize = (function() {
                 // Remove this identifier from the list of vector variables. 
                 // This way, when we visit the LHS it will only be marked as a
                 // vector if it is a vector MemberExpression.
+                var wasvec 
                 if (node.left.type === "Identifier") {
                     delete vectorVars[node.left.name];
                 }
@@ -190,6 +206,7 @@ vectorize = (function() {
     // Vectorizes an expression. This implements the 'vec' rules.
     function vectorizeExpression(expr, iv, vectorMap, vectorVars, preEffects, postEffects) {
         
+        canonicalizeAssignments(expr);
         markVectorExpressions(expr, iv, vectorVars);
         if (!expr.isvec) {
             trace("    Not a vector expression.");
@@ -354,29 +371,19 @@ vectorize = (function() {
             },
             AssignmentExpression: function (node) {
                 trace("Processing ASGN: " + escodegen.generate(node));
+                assert(node.operator === '=');
                 if (!node.isvec) {
                     util.set(node, splat(util.clone(node)));
                     trace("    Scalar: " + escodegen.generate(node));
                     return;
                 }
 
-                if (node.operator === '=') {
-                    // Regular assignment. This does not need to change.
-                    var oldMode = mode;
-                    mode = READ;
-                    this.visit(node.right);
-                    mode = WRITE;
-                    this.visit(node.left);
-                    mode = oldMode;
-                } else {
-                    // Operator assignment. This needs to be transformed into
-                    // canonical representation. Do so then revisit.
-                    var isvec = node.isvec;
-                    util.set(node, util.canonAssignment(node));
-                    node.isvec = isvec;          // The assignment.
-                    node.right.isvec = isvec;    // The RHS.
-                    this.visit(node);
-                }
+                var oldMode = mode;
+                mode = READ;
+                this.visit(node.right);
+                mode = WRITE;
+                this.visit(node.left);
+                mode = oldMode;
             },
             SequenceExpression: function (node) {
                 // Visit all subexpressions in case they contain some vector 
@@ -448,9 +455,9 @@ vectorize = (function() {
         // Initialize maps with the index variable because someone is PROBABLY
         // gonna use it!
         var temp = 'temp' + tempIdx++ + '_' + iv.name;
-        var indexVec = util.assignment(util.ident(temp), util.call(vectorConstructor, []));
+        var indexVec = util.declassignment(util.ident(temp), util.call(vectorConstructor, []));
         for (var i = 0; i < vectorWidth; i++) {
-            indexVec.expression.right.arguments[i] = iv.step(i);   
+            indexVec.declarations[0].init.arguments[i] = iv.step(i);   
         }
         preEffects.push(indexVec);
         iv.vector = util.ident(temp);

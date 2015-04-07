@@ -1,6 +1,10 @@
 dependence = (function() {
     var dependence = {};
 
+    function clone (x) {
+        return JSON.parse(JSON.stringify(x));
+    }
+
     function mkStepFn (ast, iv) {
         var update;
         esrecurse.visit(ast, {

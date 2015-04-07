@@ -31,6 +31,18 @@ util = (function(){
         };
     }
 
+    util.declassignment = function (left, right) {
+        return {
+            type: 'VariableDeclaration',
+            declarations: [{
+                type: 'VariableDeclarator',
+                id: left,
+                init: right
+            }],
+            kind: 'var'
+        };
+    }
+
     util.membership = function (obj, prop, computed) {
         return {
             type: 'MemberExpression',

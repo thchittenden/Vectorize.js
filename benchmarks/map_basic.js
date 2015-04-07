@@ -1,5 +1,5 @@
 benchmarks.push({
-    name: 'Map 2x',
+    name: 'Map +2',
     args: new Array(100000).fill(1),
     fn: function fn (args) {
         for (var i = 0; i < args.length; i++) {
@@ -10,7 +10,7 @@ benchmarks.push({
     simdfn: function fn (args) {
         for (var i = 0; i < args.length; i += 4) {
             var tmp = SIMD.float32x4(args[i], args[i+1], args[i+2], args[i+3]);
-            tmp = SIMD.float32x4.mul(tmp, SIMD.float32x4.splat(2));
+            tmp = SIMD.float32x4.add(tmp, SIMD.float32x4.splat(2));
             args[i] = tmp.x;
             args[i+1] = tmp.y;
             args[i+2] = tmp.z;
