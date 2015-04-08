@@ -106,7 +106,7 @@ vectorize = (function() {
         for (var i = 0; i < vectorWidth; i++) {
             var accessor = vectorAccessors[i];
             var read = util.property(util.ident(vector), accessor);
-            var write = util.membership(util.ident(arr), util.property(idxs, accessor));
+            var write = util.membership(util.ident(arr), util.property(idxs, accessor), true);
             writes[i] = util.assignment(write, read);
         }
         return util.block(writes, false);
