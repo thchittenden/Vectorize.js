@@ -99,9 +99,22 @@ vectorize = (function() {
         return util.declassignment(util.ident(vecName), vecIndex(arrIdx, iv));
     }
 
-    // Creates a statement that reads four elements from the SIMD vector 
+    // Creates a statement that reads four elements from the SIMD vector
     // 'vector' into 'arr[idxs.x]', 'arr[idxs.y]', etc...
-    function vecWrite(arrName, arrIdx, vecName, iv) {
+    function vecWriteVector(arr, idxs, vector) {
+        var writes = [];
+        for (var i = 0; i < vectorWidth; i++) {
+            var accessor = vectorAccessors[i];
+            var read = util.property(util.ident(vector), accessor);
+            var write = util.membership(util.ident(arr), util.property(idxs, accessor));
+            writes[i] = util.assignment(write, read);
+        }
+        return util.block(writes, false);
+    }
+
+    // Creates a statement that reads four elements from the SIMD vector 
+    // 'vector' into 'arr[i]', 'arr[i+1]', etc...
+    function vecWriteIndex(arrName, arrIdx, vecName, iv) {
         var writes = [];
         for (var i = 0; i < vectorWidth; i++) {
             var idx = util.clone(arrIdx);
@@ -109,7 +122,7 @@ vectorize = (function() {
             var write = util.membership(util.ident(arrName), stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i+1)], ...
             writes[i] = util.assignment(write, read); 
         }
-        return util.block(writes);
+        return util.block(writes, false);
     }
 
     // Converts all assignemnts of the form x *= y into x = x * y. This makes
@@ -415,7 +428,7 @@ vectorize = (function() {
                             // immediately before the current expression 
                             // instead of before all statements in the block.
                             vectorMap[key] = { name: temp, retired: false };
-                            preEffects.push(vecReadIndex(temp, node.property, iv));
+                            preEffects.push(vecReadIndex(temp, node, iv));
                         }
                     }
 
@@ -446,25 +459,30 @@ vectorize = (function() {
                         // This is the first write to this temp. Add a 
                         // writeback to the postEffects.
                         if (node.property.isvec) {
+                            // Visit the property to coerce it to a vector.
                             var oldMode = mode;
                             mode = READ;
                             this.visit(node.property);
                             mode = oldMode;
+                            
+                            // Construct the write and push it to the post effects.
+                            postEffects.push(vecWriteVector(node.object.name, node.property, temp.name));
 
-                            // Indexed by a vector. See 387.
-                            unsupported(node);
                         } else if (node.property.isidx) {
                             // The index is based on the induction variable.
                             // Generate a write block for the post effects.
-                            postEffects.push(vecWrite(node.object.name, node.property, temp.name, iv));
+                            postEffects.push(vecWriteIndex(node.object.name, node.property, temp.name, iv));
+
                         } else {
                             // The index is constant. This is a live-out dependency.
                             // We should be able to support this by just assigning the
                             // last element of the vector?
                             unsupported(node);
+
                         }
-                         
+                        temp.retired = true;
                     }
+
                     util.set(node, util.ident(temp.name));
                 }
                 trace("    Vector: " + escodegen.generate(node));
@@ -594,7 +612,7 @@ vectorize = (function() {
         });
 
         // Now we need to add the side effects to our statement.
-        util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects)));
+        util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects), true));
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -616,6 +634,26 @@ vectorize = (function() {
         loop.init = null;
     }
 
+    // Removes unneeded compound statements inserted when we needed to turn a 
+    // single statement into multiple.
+    function cleanupBlocks(ast) {
+        
+        esrecurse.visit(ast, {
+            BlockStatement: function (node) {
+                var cleaned = [];
+                for (var i = 0; i < node.body.length; i++) {
+                    var stmt = node.body[i];
+                    if (stmt.type === 'BlockStatement' && stmt.needed === false) {
+                        cleaned = cleaned.concat(stmt.body);
+                    } else {
+                        cleaned.push(stmt);
+                    }
+                }
+                node.body = cleaned;
+            }
+        });
+    }
+
     function vectorizeLoops(ast) {
        
         // We only know how to vectorize for loops at the moment. And they'll
@@ -634,10 +672,11 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 vectorizeStatement(vectorloop.body, iv);
+                cleanupBlocks(vectorloop.body);
 
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
-                util.set(node, util.block([vectorloop, scalarloop]));
+                util.set(node, util.block([vectorloop, scalarloop], true));
             }
         });
 
@@ -658,9 +697,10 @@ vectorize = (function() {
         vectorizeLoops(ast);
 
         // Transform the AST back to a function string.
-        //console.log(JSON.stringify(ast, null, 2));
         var fnstr = escodegen.generate(ast);
         console.log(fnstr);
+
+        
 
         // Convert the string to a javascript function and return it.
         return eval(fnstr);

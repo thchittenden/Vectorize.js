@@ -4,18 +4,21 @@
     <meta charset="utf-8">
     <title>Vectorize.js Tests</title>
     <link rel="stylesheet" href="http://code.jquery.com/qunit/qunit-1.17.1.css">
+    <link rel="stylesheet" href="https://google-code-prettify.googlecode.com/svn/loader/prettify.css">
+    <link rel="stylesheet" href="../lib/qunit-print.css">
     <style>
         .test-diff {
-            visibility: hidden;
-            height: 0px;
-            position: absolute;
+            display: none;
         }
     </style>
 </head>
 <body>
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
+    <script src="http://code.jquery.com/jquery-1.11.2.min.js"></script>
     <script src="http://code.jquery.com/qunit/qunit-1.17.1.js"></script>
+    <script src="https://google-code-prettify.googlecode.com/svn/loader/prettify.js"></script>
+    <script src="../lib/qunit-print.js"></script>
     <script src="../lib/simd.js"></script>
     <script src="../bin/vectorize.browser.js"></script>
     <script>
@@ -32,6 +35,10 @@
                 try {
                     var scalarFn = test.fn;
                     var vectorFn = vectorize.me(test.fn);
+                    QUnit.print("<table><tr>");
+                    QUnit.print("<td><pre class='prettyprint'>" + scalarFn + "</pre></td>");
+                    QUnit.print("<td><pre class='prettyprint'>" + vectorFn + "</pre></td>");
+                    QUnit.print("</tr></table>");
                     var args = test.args;
                     assert.deepEqual(vectorFn(clone(args)), scalarFn(clone(args)));
                 } catch (err) {
