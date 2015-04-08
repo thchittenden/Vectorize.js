@@ -2,26 +2,20 @@
     margin-top: 10px;
     background-color: #FFF;
     border-radius: 5px;
+    padding: 10px;
     color: #000;
 }
 
-#qunit-tests .qunit-messages table {
-    border: 0;
-    border-collapse: separate;
-    border-spacing: 5px;
-    width: 100%;
-}
-
-#qunit-tests .qunit-messages table td {
-    min-width: 33%;
-}
-
 #qunit-tests .qunit-messages pre {
-    display: inline-block;
-    height: 100%;
+    margin-bottom: 10px;
+    padding: 5px;
+    width: auto;
     background-color: #EEE;
     border-radius: 5px;
-    padding: 5px;
     white-space: pre-wrap;
+}
+
+#qunit-tests .qunit-messages pre:last-child {
+    margin-bottom: 0px;
 }
 

@@ -35,10 +35,8 @@
                 try {
                     var scalarFn = test.fn;
                     var vectorFn = vectorize.me(test.fn);
-                    QUnit.print("<table><tr>");
-                    QUnit.print("<td><pre class='prettyprint'>" + scalarFn + "</pre></td>");
-                    QUnit.print("<td><pre class='prettyprint'>" + vectorFn + "</pre></td>");
-                    QUnit.print("</tr></table>");
+                    QUnit.print("<pre class='prettyprint'>" + scalarFn + "</pre>");
+                    QUnit.print("<pre class='prettyprint'>" + vectorFn + "</pre>");
                     var args = test.args;
                     assert.deepEqual(vectorFn(clone(args)), scalarFn(clone(args)));
                 } catch (err) {
