@@ -80,6 +80,35 @@ tests.push({
 });
 
 tests.push({
+    name: 'Recursive Index Op',
+    args: { args1: [0, 0, 6, 6, 4, 4, 0, 0], args2: [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    fn: function fn (args) {
+        var a = args.arg1;
+        var b = args.arg2;
+        var c = [];
+        for (var i = 0; i < args.length; i++) {
+            c[i] = b[a[i] + 1];
+        }
+        return c;
+    }
+});
+
+tests.push({
+    name: 'Recursive Index Op Var',
+    args: { args1: [0, 0, 2, 2, 4, 4, 0, 0], args2: [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    fn: function fn (args) {
+        var a = args.arg1;
+        var b = args.arg2;
+        var c = [];
+        for (var i = 0; i < args.length; i++) {
+            var x = 3;
+            c[i] = b[a[i] + x];
+        }
+        return c;
+    }
+});
+
+tests.push({
     name: 'Assignment Foo Two',
     args: [0, 1, 2, 3, 4, 5, 6, 7],
     fn: function fn (args) {

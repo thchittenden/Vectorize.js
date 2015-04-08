@@ -20,15 +20,23 @@
     <script src="../bin/vectorize.browser.js"></script>
     <script>
         tests = [];
+        Array.prototype.fill = function (val) { for (var i = 0; i < this.length; i++) this[i] = val; return this; }
         function clone (arg) {
             // Apparently this is efficient!
             return JSON.parse(JSON.stringify(arg));
         }
-        function makeTestFn (fn, simdfn, arg) {
+        function makeTestFn (test) {
             // This is necessary as otherwise the closure always refers
             // to the last test in the array! Bah!
             return function (assert) {
-                assert.deepEqual(simdfn(clone(arg)), fn(clone(arg)));
+                try {
+                    var scalarFn = test.fn;
+                    var vectorFn = vectorize.me(test.fn);
+                    var args = test.args;
+                    assert.deepEqual(vectorFn(clone(args)), scalarFn(clone(args)));
+                } catch (err) {
+                    assert.ok(false, 'THROWN: ' + err);
+                }
             };
         }
         window.onload = function() {
@@ -36,7 +44,7 @@
             QUnit.module("Tests");
             for (var i = 0; i < tests.length; i++) {
                 var test = tests[i];
-                QUnit.test(test.name, makeTestFn(test.fn, vectorize.me(test.fn), test.args));
+                QUnit.test(test.name, makeTestFn(test));
             }
         };
     </script>

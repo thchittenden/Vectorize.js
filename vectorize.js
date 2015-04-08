@@ -11,9 +11,8 @@ vectorize = (function() {
     function assert(cond) {
         if (!cond) throw "assertion failed"
     }
-    function nodekey(node) {
-        // Need a unique string for the node! Uhhh...
-        return escodegen.generate(node);
+    function trace(str) {
+        console.log(str);
     }
    
     // SIMD properties.
@@ -33,13 +32,15 @@ vectorize = (function() {
     vectorOp['>'] = util.property(vectorConstructor, 'greaterThan');
     var tempIdx = 0; // Yikes!
 
-    // Logging functions.
-    function trace(str) {
-        console.log(str);
-    }
-
-    function splat (val) {
+    function splat(val) {
         return util.call(util.property(vectorConstructor, 'splat'), [val]);
+    }
+    function nodekey(node) {
+        // Need a unique string for the node! Uhhh...
+        return escodegen.generate(node);
+    }
+    function mktemp(id) {
+        return 'temp' + tempIdx++ + '_' + id;
     }
 
     // Converts a function to a function expression so we can manipulate 
@@ -54,9 +55,21 @@ vectorize = (function() {
         return ast;
     }
 
+    // Steps the index inside an expression to a particular iteration.
+    function stepIndex(expr, iv, iter) {
+        esrecurse.visit(expr, {
+            Identifier: function (node) {
+                if (node.name === iv.name) {
+                    util.set(node, iv.step(iter));
+                }
+            }
+        });
+        return expr;
+    }
+    
     // Create a statement that declares 'vector' and assigns four elements of
     // 'arr' to it.
-    function vecRead(vector, arr, idxs) {
+    function vecReadVector(vector, arr, idxs) {
         var args = [];
         for (var i = 0; i < vectorWidth; i++) {
             args[i] = util.membership(util.ident(arr), util.property(idxs, vectorAccessors[i]), true);
@@ -66,26 +79,35 @@ vectorize = (function() {
         return util.declassignment(util.ident(vector), util.call(vectorConstructor, args));
     }
 
+    // Constructs a vector by replacing the IV in the expression with 
+    // vectorWidth successive steps.
+    //      vecIndex("2*i", iv) 
+    // becomes
+    //      v(2*i, 2*(i+1), 2*(i+2), 2*(i+3));
+    function vecIndex(iv_expr, iv) {
+        var args = [];
+        for (var i = 0; i < vectorWidth; i++) {
+            var expr = util.clone(iv_expr);
+            args[i] = stepIndex(expr, iv, i);
+        }
+        return util.call(vectorConstructor, args);
+    }
+
+    // Creates a statement that reads four elements from the array 'arrName' 
+    // into the vector 'vecName'.
+    function vecReadIndex(vecName, arrIdx, iv) {
+        return util.declassignment(util.ident(vecName), vecIndex(arrIdx, iv));
+    }
+
     // Creates a statement that reads four elements from the SIMD vector 
     // 'vector' into 'arr[idxs.x]', 'arr[idxs.y]', etc...
-    function vecWrite(arr, idxs, vector) {
+    function vecWrite(arrName, arrIdx, vecName, iv) {
         var writes = [];
-        
-        // If the index is not just an identifier (i.e. computation is 
-        // involved), cache the result to a temp so we don't repeat it four 
-        // times!
-        if (idxs.type !== 'Identifier') {
-            var temp = 'temp' + tempIdx++;
-            writes.push(util.assignment(util.ident(temp), idxs));
-            idxs = util.ident(temp); 
-        }
-
-        // Construct the writes: arr[idxs.x] = vec.x, ...
         for (var i = 0; i < vectorWidth; i++) {
-            var accessor = vectorAccessors[i];
-            var read = util.property(util.ident(vector), accessor); // vec.x, vec.y, ...
-            var write = util.membership(util.ident(arr), util.property(idxs, accessor), true);  // arr[idxs.x], arr[idxs.y], ...
-            writes.push(util.assignment(write, read)); 
+            var idx = util.clone(arrIdx);
+            var read = util.property(util.ident(vecName), vectorAccessors[i]); // vec.x, vec.y, ...
+            var write = util.membership(util.ident(arrName), stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i+1)], ...
+            writes[i] = util.assignment(write, read); 
         }
         return util.block(writes);
     }
@@ -105,72 +127,100 @@ vectorize = (function() {
         });
     }
 
-    // Augments an expression AST with a property 'isvec' which indicates 
-    // whether that node needs to be vectorized or not. Updates the vectorVars
-    // argument to reflect the vector variables live AFTER the expression.
+    // Augments an expression AST with two properties: 'isvec' and 'isidx'.
+    // 'isvec' indicates whether a node's value is a SIMD vector. 'isidx' 
+    // indicates whether a node's value is derived from the induction variable.
+    // This distinction is important at codegen time as we try not to convert 
+    // indices blindly into vectors as this hurts performance. e.g.
+    //      var arr = SIMD.float32x4(i, i+1, i+2, i+3);
+    // is much more efficient than
+    //      var idx = SIMD.float32x4(i, i+1, i+2, i+3);
+    //      var arr = SIMD.float32x4(idx.x, idx.y, idx.z, idx.w);
     function markVectorExpressions(expr, iv, vectorVars) {
         
         esrecurse.visit(expr, {
             ThisExpression: function (node) {
                 node.isvec = false;
-            },
-            Identifier: function (node) {
-                node.isvec = node.name === iv.name || node.name in vectorVars;
+                node.isidx = false;
             },
             Literal: function (node) {
                 node.isvec = false;
+                node.isidx = false;
+            },
+            Identifier: function (node) {
+                node.isvec = node.name in vectorVars;
+                node.isidx = node.name === iv.name;
+                assert(!(node.isvec && node.isidx));
             },
             MemberExpression: function (node) {
                 if (node.computed) {
-                    // A computed access is a vector if the accessor is a 
-                    // vector. This is of the form 'obj[property]'
+                    // A computed access is a vector if the accessor is either
+                    // a vector or an index. This is of the form 'obj[property]'
                     this.visit(node.property);
-                    node.isvec = node.property.isvec;
+                    node.isvec = node.property.isvec || node.property.isidx;
                 } else {
                     // An uncomputed access is never a vector. This is of the
                     // form 'obj.property'.
                     node.isvec = false;
+                    node.isidx = false;
                 }
             },
             BinaryExpression: function (node) {
                 this.visit(node.left);
                 this.visit(node.right);
+
+                // If a binary expression has a vector operand, then the entire
+                // operation must be a vector.
                 node.isvec = node.left.isvec || node.right.isvec;
+                node.isidx = !node.isvec && (node.left.isidx || node.right.isidx);
             },
             UnaryExpression: function (node) {
                 this.visit(node.argument);
                 node.isvec = node.argument.isvec;
+                ndoe.isidx = node.argument.isidx;
             },
             UpdateExpression: function (node) {
                 this.visit(node.argument);
                 node.isvec = node.argument.isvec;
+                node.isidx = node.argument.isidx; // This is likely bad!
             },
             LogicalExpression: function (node) {
                 this.visit(node.left);
                 this.visit(node.right);
                 node.isvec = node.left.isvec || node.right.isvec;
+                node.isidx = !node.isvec && (node.left.isidx || node.right.isidx);
             },
             ConditionalExpression: function (node) {
                 this.visit(node.test);
                 this.visit(node.alternate);
                 this.visit(node.consequent);
                 node.isvec = node.test.isvec || node.alternate.isvec || node.consequent.isvec;
+                node.isidx = !node.isvec && (node.test.isidx || node.alternate.isidx || node.consequent.isidx);
             },
             AssignmentExpression: function (node) {
                 this.visit(node.right);
                 
                 // Remove this identifier from the list of vector variables. 
-                // This way, when we visit the LHS it will only be marked as a
-                // vector if it is a vector MemberExpression.
-                var wasvec 
+                // This way, when we visit the LHS it will not be marked as a 
+                // vector if the OLD value of the LHS was a vector. e.g. in
+                //      var x = a[i];
+                //      x = 2;
+                // x should not be a vector in the second statement.
                 if (node.left.type === "Identifier") {
                     delete vectorVars[node.left.name];
                 }
                 this.visit(node.left);
 
-                // An assignment is a vector if we either read from a vector or
-                // assign to an array.
-                node.isvec = node.right.isvec || node.left.isvec;
+                // An assignment is a vector in two cases: 
+                //      1. The LHS is a vector meaning it will eventually need 
+                //          to be retired to an array (e.g. a[i] = 2);
+                //      2. The RHS is either a vector or an index. We cannot 
+                //         preserve 'isidx' as given the current expression we
+                //         do not know how the result will be used. For 
+                //         performant code, make sure not to assign the index 
+                //         before using it to index!
+                node.isvec = node.right.isidx || node.right.isvec || node.left.isvec;
+                node.isidx = false;
                
                 // If this node was a vector and the LHS was an identifier, 
                 // that identifier is now a vector.
@@ -186,6 +236,7 @@ vectorize = (function() {
                     this.visit(node.expressions[i]);
                 }
                 node.isvec = node.expressions[node.expressions.length - 1].isvec;
+                node.isidx = node.expressions[node.expressions.length - 1].isidx;
             },
 
             // Unsupported as of now. Can they be supported?
@@ -208,7 +259,7 @@ vectorize = (function() {
         
         canonicalizeAssignments(expr);
         markVectorExpressions(expr, iv, vectorVars);
-        if (!expr.isvec) {
+        if (!(expr.isvec || expr.isidx)) {
             trace("    Not a vector expression.");
             // No work to do. Bail out.
             return false;
@@ -219,7 +270,7 @@ vectorize = (function() {
         var READ = 0;
         var WRITE = 1;
         var mode = READ;
-        
+
         // Whenever a node is visited, it must always transform itself so that
         // it is a vector.
         esrecurse.visit(expr, {
@@ -227,14 +278,27 @@ vectorize = (function() {
                 // We only need to parallelize the identifier if we're 
                 // reading. Otherwise it will just overwrite it. 
                 if (mode === READ) {
-                    if (node.isvec) {
-                        // If what we're reading is already a vector, we don't
-                        // need to do anything unless its the induction 
-                        // variable in which case we need to replace it with
-                        // the vector variable.
-                        if (node.name === iv.name) {
-                            util.set(node, iv.vector);
+                    if (node.isidx) {
+                        // We're reading the induction variable. This means 
+                        // we're using it as part of an arithmetic expression
+                        // with a vector or that will be assigned to a 
+                        // variable. In this case we follow the same process as
+                        // when using a member expression like a[i].
+                        var key = nodekey(node); // Should be iv.name.
+                        if (!(key in vectorMap)) {
+                            var temp = mktemp(node.name);
+                            preEffects.push(vecReadIndex(temp, node, iv));
+                            vectorMap[key] = temp;
                         }
+
+                        // Extract the temp and replace the current node.
+                        var temp = vectorMap[key];
+                        util.set(node, util.ident(temp));
+
+                    } else if (node.isvec) {
+                        // If what we're reading is already a vector, we don't
+                        // need to do anything!
+                        
                     } else {
                         // This is just a plain old variable. Splat it.
                         util.set(node, splat(util.clone(node)));
@@ -295,14 +359,11 @@ vectorize = (function() {
             MemberExpression: function (node) {
                 trace("Processing MEMBER: " + escodegen.generate(node));
                 if (!node.isvec) {
-                    // This is a non-vector member access. It may use a non-IV
-                    // index or a non-computed index. Just splat it in this 
-                    // case.
+                    // This node is not a vector. Splat it.
                     util.set(node, splat(util.clone(node)));
-                    trace("    Scalar: " + escodegen.generate(node));
                     return;
-                } 
-                
+                }
+
                 // Cache the key since it will change when we visit the 
                 // node property.
                 var key = nodekey(node);
@@ -322,17 +383,43 @@ vectorize = (function() {
                     if (!(key in vectorMap)) {
                         // We have not seen this access before. Create a new
                         // temporary and add it to the preEffects.
-                        var temp = 'temp' + tempIdx++ + '_' + node.object.name;
+                        var temp = mktemp(node.object.name);
 
-                        // Visit the property. This is now a vector.
-                        this.visit(node.property);
-                        preEffects.push(vecRead(temp, node.object.name, node.property));
-                        vectorMap[key] = { name: temp, inPostEffects: false};
+                        if (node.property.isvec) {
+                            // Visit the property to coerce it to a vector.
+                            this.visit(node.property);
+
+                            // Now we need to create a new vector indexing with
+                            // the lanes of the property:
+                            //      v(a[prop.x], a[prop.y], ...);
+                            // Currently this is unsupported as it will require
+                            // converting this expression to a sequence 
+                            // expression which assigns the property to a temp,
+                            // then performs the dereference on the temp to
+                            // avoid recalculating the indices four times.
+                            // Consider:
+                            //      a[b[i] + 2];
+                            // This will be naively compiled to:
+                            //      v(a[add(temp_b, splat(2)).x], a[add(temp_b, splat(2)).y], ...);
+                            // While we want to compile it to:
+                            //      (temp = add(temp_b, splat(2)), v(a[temp.x], b[temp.y], ...));
+                            vectorMap[key] = { name: temp, retired: false };
+                            preEffects.push(vecReadVector(temp, node.object.name, node.property));
+
+                        } else {
+                            assert(node.property.isidx);
+                            // The index is based on the induction variable. 
+                            // There is a problem if this property uses a 
+                            // variable calculated AFTER the pre-effects. This 
+                            // can be mitigated by making preeffects act
+                            // immediately before the current expression 
+                            // instead of before all statements in the block.
+                            vectorMap[key] = { name: temp, retired: false };
+                            preEffects.push(vecReadIndex(temp, node.property, iv));
+                        }
                     }
 
-                    // We have either already read from or written to this node.
-                    // In either of these cases, we do not want to add it to the
-                    // preeffects array, we just want to use the most recent tmep.
+                    // Retrieve the temp from the vector map and use it.
                     var temp = vectorMap[key];
                     util.set(node, util.ident(temp.name));
 
@@ -350,20 +437,33 @@ vectorize = (function() {
                         // We have not seen this write before. Create a new
                         // temporary and add it to the maps. It will be added
                         // to the post effects below.
-                        temp = 'temp' + tempIdx++ + '_' + node.object.name;
-                        vectorMap[key] = { name: temp, inPostEffects: false};
+                        var temp = mktemp(node.object.name);
+                        vectorMap[key] = { name: temp, retired: false };
                     }
-                    
+
                     var temp = vectorMap[key];
-                    if (!temp.inPostEffects) {
-                        // This is the first write to this array, add it to the
-                        // postEffects array.
-                        var oldMode = mode;
-                        mode = READ;
-                        this.visit(node.property);
-                        mode = oldMode;
-                        postEffects.push(vecWrite(node.object.name, node.property, temp.name));
-                        temp.inPostEffects = true;
+                    if (!temp.retired) {
+                        // This is the first write to this temp. Add a 
+                        // writeback to the postEffects.
+                        if (node.property.isvec) {
+                            var oldMode = mode;
+                            mode = READ;
+                            this.visit(node.property);
+                            mode = oldMode;
+
+                            // Indexed by a vector. See 387.
+                            unsupported(node);
+                        } else if (node.property.isidx) {
+                            // The index is based on the induction variable.
+                            // Generate a write block for the post effects.
+                            postEffects.push(vecWrite(node.object.name, node.property, temp.name, iv));
+                        } else {
+                            // The index is constant. This is a live-out dependency.
+                            // We should be able to support this by just assigning the
+                            // last element of the vector?
+                            unsupported(node);
+                        }
+                         
                     }
                     util.set(node, util.ident(temp.name));
                 }
@@ -451,16 +551,6 @@ vectorize = (function() {
         // A list of statements that retire temporaries generated in the 
         // statement to the appropriate arrays
         var postEffects = [];
-
-        // Initialize maps with the index variable because someone is PROBABLY
-        // gonna use it!
-        var temp = 'temp' + tempIdx++ + '_' + iv.name;
-        var indexVec = util.declassignment(util.ident(temp), util.call(vectorConstructor, []));
-        for (var i = 0; i < vectorWidth; i++) {
-            indexVec.declarations[0].init.arguments[i] = iv.step(i);   
-        }
-        preEffects.push(indexVec);
-        iv.vector = util.ident(temp);
 
         // Vectorize statements.
         esrecurse.visit(stmt, {
