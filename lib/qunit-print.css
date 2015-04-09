@@ -1,0 +1,21 @@
+#qunit-tests .qunit-messages {
+    margin-top: 10px;
+    background-color: #FFF;
+    border-radius: 5px;
+    padding: 10px;
+    color: #000;
+}
+
+#qunit-tests .qunit-messages pre {
+    margin-bottom: 10px;
+    padding: 5px;
+    width: auto;
+    background-color: #EEE;
+    border-radius: 5px;
+    white-space: pre-wrap;
+}
+
+#qunit-tests .qunit-messages pre:last-child {
+    margin-bottom: 0px;
+}
+

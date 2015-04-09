@@ -68,10 +68,11 @@ util = (function(){
         };
     }
 
-    util.block = function (stmts) {
+    util.block = function (stmts, needed) {
         return {
             type: 'BlockStatement',
-            body: stmts
+            body: stmts,
+            needed: needed // This indicates whether we'll remove it in post processing
         };
     }
 

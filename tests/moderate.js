@@ -25,31 +25,39 @@ tests.push({
 });
 
 tests.push({
-    name: 'Benchmark Test Nested Loops IV',
-    args: new Array(100),
+    name: 'Index Arithmetic',
+    args: new Array(100).fill(0),
     fn: function fn (args) {
         for (var i = 0; i < args.length; i++) {
-            var tmp = args[i];
-            for (var j = 0; j < 1000; j++) {
-                tmp += j;
-            }
-            args[i] = tmp;
+            var x = i;
+            var y = x + 2;
+            var z = i * y;
+            args[i] = z;
         }
         return args;
     }
 });
 
 tests.push({
-    name: 'Benchmark Test Nested Loops Constant',
-    args: new Array(100),
+    name: 'Complex LValue',
+    args: new Array(100).fill(0),
+    fn: function fn (args) {
+        var obj = { prop: args };
+        for (var i = 0; i < args.length; i++) {
+            obj.prop[i] = 2 * obj.prop[i];
+        }
+        return obj.prop;
+    }
+});
+
+tests.push({
+    name: 'Nothing-a-do-index',
+    args: new Array(100).fill(0),
     fn: function fn (args) {
         for (var i = 0; i < args.length; i++) {
-            var tmp = args[i];
-            for (var j = 0; j < 1000; j++) {
-                tmp += 1;
-            }
-            args[i] = tmp;
-        }
+            i + 2 - 1;
+            args[i] = 4;
+        }   
         return args;
     }
 });

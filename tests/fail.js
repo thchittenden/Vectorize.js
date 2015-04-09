@@ -75,3 +75,16 @@ tests.push({
         return sum;
     }
 });
+
+tests.push({
+    name: 'Inner Loop Iterations',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            for (var j = 0; j < i; j++) {
+                args[i] += j;
+            }
+        } 
+        return args;
+    }   
+});
