@@ -1,6 +1,7 @@
 #!/usr/local/bin/js
-assertEq(isSimdAvaialble(), true);
+assertEq(isSimdAvailable(), true);
 load('../lib/benchmark.js');
+load('../bin/vectorize.browser.js');
 
 Array.prototype.fill = function (val) {
     for (var i = 0; i < this.length; i++) {
@@ -31,6 +32,9 @@ function vector (args, n) {
         args[i+3] = tmp.w;
     }
 }
+
+console.log = function (args) { };
+vectorizedScalar = vectorize.me(scalar);
 
 var samples = [
 { e: 2500, n: 4000 },
@@ -64,5 +68,6 @@ for (i in samples) {
     var arr = new Array(sample.e).fill(0);
     var b1 = new Benchmark(function () { scalar(arr, sample.n) }); b1.run();
     var b2 = new Benchmark(function () { vector(arr, sample.n) }); b2.run();
-    print(sample.e + ', ' + sample.n + ', ' + (b1.times.period * 1000) + ', ' + (b2.times.period * 1000));
+    var b3 = new Benchmark(function () { vectorizedScalar(arr, sample.n) }); b3.run();
+    print(sample.e + ', ' + sample.n + ', ' + (b1.times.period * 1000) + ', ' + (b2.times.period * 1000) + ', ' + (b3.times.period * 1000));
 }
