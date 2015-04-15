@@ -173,3 +173,35 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Update Foo',
+    args: [ 1, 2, 3, 4, 5, 6, 7, 8 ],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 0;
+            args[i] += x++;
+            args[i] += ++x;
+            args[i] += x--;
+            args[i] += --x;
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'Update Foo Two',
+    args: [ 1, 2, 3, 4, 5, 6, 7, 8 ],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            args[i]++;
+            args[i]--;
+            ++args[i];
+            --args[i];
+
+            // The identity function would be too boring.
+            args[i]++;
+        }
+        return args;
+    }
+});

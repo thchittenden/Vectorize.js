@@ -106,14 +106,22 @@ util = (function(){
         return JSON.parse(JSON.stringify(node));
     }
 
-    util.canonAssignment = function (expr) {
+    util.canonAssignment = function (expr, mode) {
         var operator = expr.operator;
         switch (expr.type) { 
             case 'UpdateExpression':
-                // This is not completely correct as it does not preserve
-                // effect order. i++ should be generated to (i = i + 1, i - 1).
-                var op = operator === '++' ? '+' : '-';
-                return util.assign(expr.argument, util.binop(util.clone(expr.argument), op, util.literal(1)));
+                var op  = operator === '++' ? '+' : '-';
+                var rop = operator === '++' ? '-' : '+';
+
+                if (mode !== 'strict' || expr.prefix) {
+                    // The easy case, just return (expr = expr + 1).
+                    return util.assign(expr.argument, util.binop(util.clone(expr.argument), op, util.literal(1)));
+                } else {
+                    // The hard case, return (expr = expr + 1, expr - 1).
+                    var inc = util.assign(expr.argument, util.binop(util.clone(expr.argument), op, util.literal(1)));
+                    var dec = util.binop(util.clone(expr.argument), rop, util.literal(1));
+                    return util.sequence([inc, dec]);
+                }
 
             case 'AssignmentExpression':
                 if (operator === '=') {

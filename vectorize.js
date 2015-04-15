@@ -133,9 +133,14 @@ vectorize = (function() {
                 // In case there are nested assignments...
                 this.visit(asgn.right);
                 this.visit(asgn.left);
-
-                // Update our current node.
-                util.set(asgn, util.canonAssignment(asgn));
+                
+                util.set(asgn, util.canonAssignment(asgn, 'strict'));
+            },
+            UpdateExpression: function (update) {
+                // In case there are nested updates, uh oh...
+                this.visit(update.argument);
+                
+                util.set(update, util.canonAssignment(update, 'strict'));
             }
         });
     }
@@ -191,11 +196,6 @@ vectorize = (function() {
                 this.visit(node.argument);
                 node.isvec = node.argument.isvec;
                 ndoe.isidx = node.argument.isidx;
-            },
-            UpdateExpression: function (node) {
-                this.visit(node.argument);
-                node.isvec = node.argument.isvec;
-                node.isidx = node.argument.isidx; // This is likely bad!
             },
             LogicalExpression: function (node) {
                 this.visit(node.left);
@@ -264,13 +264,19 @@ vectorize = (function() {
             GeneratorExpression: unsupported,
             GraphExpression: unsupported,
             GraphIndexExpression: unsupported,
+            
+            // This should have been removed.
+            UpdateExpression: function () { throw "update expression remains!" },
         });
     }
 
     // Vectorizes an expression. This implements the 'vec' rules.
     function vectorizeExpression(expr, iv, vectorMap, vectorVars, preEffects, postEffects) {
-        
+       
+        // Remove any ++, --, +=, etc...
         canonicalizeAssignments(expr);
+
+        // Augment with isidx/isvec properties.
         markVectorExpressions(expr, iv, vectorVars);
         if (!(expr.isvec || expr.isidx)) {
             trace("    Not a vector expression.");
@@ -321,19 +327,6 @@ vectorize = (function() {
             Literal: function (node) {
                 // Need to splat literals.
                 util.set(node, splat(util.clone(node)));
-            },
-            UpdateExpression: function (node) {
-                if (!node.isvec) {
-                    util.set(node, splat(util.clone(node)));
-                } 
-
-                // You can only perform update expressions on identifiers. RIGHT?
-                // In this case, we perform the following transformations:
-                //      x++     ->      (x = x + 1, x - 1)
-                //      ++x     ->      (x = x + 1)
-                // And likewise for --.
-                // I'm too lazy to implement this now.
-                unsupported(node);
             },
             BinaryExpression: function (node) {
                 trace("Processing BINOP: " + escodegen.generate(node));
@@ -531,6 +524,9 @@ vectorize = (function() {
             GeneratorExpression: unsupported,
             GraphExpression: unsupported,
             GraphIndexExpression: unsupported,
+
+            // This should have been removed.
+            UpdateExpression: function () { throw "update expression remains!" },
 
         });
     
