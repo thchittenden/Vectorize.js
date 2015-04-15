@@ -96,3 +96,16 @@ tests.push({
     }
 
 });
+
+tests.push({
+    name: 'Vector Uneven Length',
+    args: new Array(11).fill(2),
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            args[i] = args[i] + 1;
+        }
+        return args;
+    }
+});
+
+

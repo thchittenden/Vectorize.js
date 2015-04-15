@@ -1,3 +1,4 @@
+// These are tests known to fail!
 tests = [];
 mods.push({
     name: 'Failures',
@@ -5,15 +6,20 @@ mods.push({
     tests: tests,
 });
 
-// These are tests known to fail!
 tests.push({
-    name: 'Vector Length 9',
-    args: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    name: 'Read Placement',
+    args: { a: [ 1, 2, 3, 4, 5, 6, 7, 8 ], b: [ 0, 0, 1, 1, 4, 4, 5, 5 ] },
     fn: function fn (args) {
-        for (var i = 0; i < args.length; i++) {
-            args[i] = args[i] + 1;
+        var a = args.a;
+        var b = args.b;
+        for (var i = 0; i < a.length; i++) {
+            var x = b[i];
+            x++;
+            for (var j = 0; j < 10; j++) {
+                a[x] += 1
+            }
         }
-        return args;
+        return a;
     }
 });
 
@@ -80,6 +86,33 @@ tests.push({
             sum += args[i];
         }
         return sum;
+    }
+});
+
+tests.push({
+    name: 'Deep Reduction',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var x, y, z = 0, sum = 0;
+        for (var i = 0; i < args.length; i++) {
+            sum = z + args[i];
+            x = sum;
+            y = x;
+            z = y;
+        }
+        return sum;
+    }
+});
+
+tests.push({
+    name: 'Scan',
+    args: new Array(8).fill(1),
+    fn: function fn (args) {
+        var scan = [0];
+        for (var i = 0; i < args.length; i++) {
+            scan[i + 1] = scan[i] + args[i];
+        }
+        return scan;
     }
 });
 
