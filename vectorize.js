@@ -39,8 +39,10 @@ vectorize = (function() {
         // Need a unique string for the node! Uhhh...
         return escodegen.generate(node);
     }
-    function mktemp(id) {
-        return 'temp' + tempIdx++ + '_' + id;
+    function mktemp(node) {
+        var id = escodegen.generate(node);
+        var safe_id = id.replace(/[-\+\*\/\.\[\]]/g, '_');
+        return 'temp' + tempIdx++ + '_' + safe_id;
     }
 
     // Converts a function to a function expression so we can manipulate 
@@ -106,7 +108,7 @@ vectorize = (function() {
         for (var i = 0; i < vectorWidth; i++) {
             var accessor = vectorAccessors[i];
             var read = util.property(util.ident(vector), accessor);
-            var write = util.membership(util.ident(arr), util.property(idxs, accessor), true);
+            var write = util.membership(arr, util.property(idxs, accessor), true);
             writes[i] = util.assignment(write, read);
         }
         return util.block(writes, false);
@@ -114,12 +116,12 @@ vectorize = (function() {
 
     // Creates a statement that reads four elements from the SIMD vector 
     // 'vector' into 'arr[i]', 'arr[i+1]', etc...
-    function vecWriteIndex(arrName, arrIdx, vecName, iv) {
+    function vecWriteIndex(arr, arrIdx, vecName, iv) {
         var writes = [];
         for (var i = 0; i < vectorWidth; i++) {
             var idx = util.clone(arrIdx);
             var read = util.property(util.ident(vecName), vectorAccessors[i]); // vec.x, vec.y, ...
-            var write = util.membership(util.ident(arrName), stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i+1)], ...
+            var write = util.membership(arr, stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i+1)], ...
             writes[i] = util.assignment(write, read); 
         }
         return util.block(writes, false);
@@ -305,7 +307,7 @@ vectorize = (function() {
                         // when using a member expression like a[i].
                         var key = nodekey(node); // Should be iv.name.
                         if (!(key in vectorMap)) {
-                            var temp = mktemp(node.name);
+                            var temp = mktemp(node);
                             preEffects.push(vecReadIndex(temp, node, iv));
                             vectorMap[key] = temp;
                         }
@@ -389,7 +391,7 @@ vectorize = (function() {
                     if (!(key in vectorMap)) {
                         // We have not seen this access before. Create a new
                         // temporary and add it to the preEffects.
-                        var temp = mktemp(node.object.name);
+                        var temp = mktemp(node.object);
 
                         if (node.property.isvec) {
                             // Visit the property to coerce it to a vector.
@@ -443,7 +445,7 @@ vectorize = (function() {
                         // We have not seen this write before. Create a new
                         // temporary and add it to the maps. It will be added
                         // to the post effects below.
-                        var temp = mktemp(node.object.name);
+                        var temp = mktemp(node.object);
                         vectorMap[key] = { name: temp, retired: false };
                     }
 
@@ -459,12 +461,12 @@ vectorize = (function() {
                             mode = oldMode;
                             
                             // Construct the write and push it to the post effects.
-                            postEffects.push(vecWriteVector(node.object.name, node.property, temp.name));
+                            postEffects.push(vecWriteVector(node.object, node.property, temp.name));
 
                         } else if (node.property.isidx) {
                             // The index is based on the induction variable.
                             // Generate a write block for the post effects.
-                            postEffects.push(vecWriteIndex(node.object.name, node.property, temp.name, iv));
+                            postEffects.push(vecWriteIndex(node.object, node.property, temp.name, iv));
 
                         } else {
                             // The index is constant. This is a live-out dependency.

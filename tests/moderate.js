@@ -61,3 +61,15 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Array Expressions',
+    args: [[ 1, 2, 3, 4, 5, 6, 7, 8 ]],
+    fn: function fn (args) {
+        var i = 0;
+        for (var j = 0; j < args[0].length; j++) {
+            args[i][j] = args[i][j] + 1;
+        }
+        return args;
+    }
+});
