@@ -1,3 +1,10 @@
+tests = [];
+mods.push({
+    name: 'Basic',
+    order: 1,
+    tests: tests,
+});
+
 tests.push({
     name: 'Vector Add Literal',
     args: [1, 2, 3, 4, 5, 6, 7, 8],

@@ -1,3 +1,10 @@
+tests = [];
+mods.push({
+    name: 'Moderate',
+    order: 2,
+    tests: tests,
+});
+
 tests.push({
     name: 'Nested Loops Constant',
     args: [0, 1, 2, 3, 4, 5, 6, 7],

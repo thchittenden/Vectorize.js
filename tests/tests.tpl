@@ -22,7 +22,7 @@
     <script src="../lib/simd.js"></script>
     <script src="../bin/vectorize.browser.js"></script>
     <script>
-        tests = [];
+        mods = [];
         Array.prototype.fill = function (val) { for (var i = 0; i < this.length; i++) this[i] = val; return this; }
         function clone (arg) {
             // Apparently this is efficient!
@@ -45,11 +45,17 @@
             };
         }
         window.onload = function() {
+            // Sort the modules.
+            mods.sort(function (a, b) { return a.order - b.order; });
+
             // Add tests.
-            QUnit.module("Tests");
-            for (var i = 0; i < tests.length; i++) {
-                var test = tests[i];
-                QUnit.test(test.name, makeTestFn(test));
+            for (var i = 0; i < mods.length; i++) {
+                var mod = mods[i];
+                QUnit.module(mod.name);
+                for (var j = 0; j < mod.tests.length; j++) {
+                    var test = mod.tests[j];
+                    QUnit.test(test.name, makeTestFn(test));
+                }
             }
         };
     </script>

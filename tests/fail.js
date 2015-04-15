@@ -1,3 +1,10 @@
+tests = [];
+mods.push({
+    name: 'Failures',
+    order: 100, // Perform these last.
+    tests: tests,
+});
+
 // These are tests known to fail!
 tests.push({
     name: 'Vector Length 9',
