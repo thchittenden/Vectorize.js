@@ -80,3 +80,19 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Index Update',
+    args: { a: [ 1, 2, 3, 4, 5, 6, 7, 8 ], b: [ 0, 0, 1, 1, 4, 4, 5, 5 ] },
+    fn: function fn (args) {
+        var a = args.a;
+        var b = args.b;
+        for (var i = 0; i < a.length; i++) {
+            var idx = b[i];
+            idx = idx + 1;
+            a[i] = a[idx];
+        }
+        return a;
+    }
+
+});
