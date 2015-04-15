@@ -611,8 +611,20 @@ vectorize = (function() {
 
         });
 
+        // If the outermost statement of the loop is a block then we can mark
+        // it as unneeded as it will be contained in the preEffects-postEffects
+        // block.
+        if (stmt.type === 'BlockStatement') {
+            stmt.needed = false;
+        }   
+
         // Now we need to add the side effects to our statement.
         util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects), true));
+
+        // TODO: Temporarily returning vectorVars so we can determine 
+        // if a reduction variable is valid or not. Once reduction variables 
+        // are automatically detected this won't be necessary.
+        return vectorVars;
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -632,6 +644,34 @@ vectorize = (function() {
         // Remove the init from the scalar loop bounds so it continues where
         // the vector loop left off.
         loop.init = null;
+    }
+
+    // At the end of the loop, any reduction variable will be a vector 
+    // containing reductions for each lane. This function performs reductions
+    // on these vectors so they appear valid after the loop. 
+    function performReductions(loop, reductions, liveouts) {
+        var stmts = [clone(loop)];
+
+        // For reductions we just perform the reduction across the four lanes
+        // of the vector.
+        for (var i = 0; i < reductions.length; i++) {
+            var reduction = reductions[i];
+            var name = reduction.name;
+            var op = reduction.op;
+            var red1 = util.binop(util.property(util.ident(name), 'x'), op, util.property(util.ident(name), 'y'));
+            var red2 = util.binop(util.property(util.ident(name), 'z'), op, util.property(util.ident(name), 'w'));
+            var red3 = util.binop(red1, op, red2);
+            stmts.push(util.assignment(util.ident(name), red3));
+        }
+
+        // For liveouts we just use the last lane of the vector.
+        for (var i = 0; i < liveouts.length; i++) {
+            var liveout = liveouts[i];
+            var name = liveout.name;
+            stmts.push(util.assignment(util.ident(name), util.property(util.ident(name), 'w')));
+        }
+
+        util.set(loop, util.block(stmts, false));
     }
 
     // Removes unneeded compound statements inserted when we needed to turn a 
@@ -660,9 +700,16 @@ vectorize = (function() {
         // be wrong if they don't iterate some multiple of 4 times.
         esrecurse.visit(ast, {
             ForStatement: function (node) {
-                var iv = dependence.detectIV(node);
                 var vectorloop = util.clone(node);
                 var scalarloop = util.clone(node);
+                
+                // Detect the induction variable in the loop.
+                var iv = dependence.detectIV(node);
+                
+                // Get the reduction operations in the loop. This should be 
+                // auto-detected in the future.
+                var reductions = [];
+                var liveouts = [];
                 
                 // Update the loop bounds so we perform as much of the loop in
                 // vectors as possible. This converts:
@@ -672,6 +719,7 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 vectorizeStatement(vectorloop.body, iv);
+                performReductions(vectorloop, reductions, liveouts);
                 cleanupBlocks(vectorloop.body);
 
                 // Append the serial code to the vectorized code. This allows 
