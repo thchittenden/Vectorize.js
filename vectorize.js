@@ -57,6 +57,24 @@ vectorize = (function() {
         return ast;
     }
 
+    // Returns an AST statement that declares the temporaries we're going to use.
+    function makeDecls(temps) {
+        var decls = [];
+        for (var i = 0; i < temps.length; i++) {
+            var temp = temps[i];
+            decls.push({
+                type: 'VariableDeclarator',
+                id: util.ident(temp),
+                init: null
+            });
+        }
+        return {
+            type: 'VariableDeclaration',
+            declarations: decls,
+            kind: 'var',
+        };
+    }
+
     // Steps the index inside an expression to a particular iteration.
     function stepIndex(expr, iv, iter) {
         esrecurse.visit(expr, {
@@ -78,7 +96,7 @@ vectorize = (function() {
         }
 
         // Return assignment 'vector = v(arr[idxs.x], arr[idxs.y], ...)'
-        return util.declassignment(util.ident(vector), util.call(vectorConstructor, args));
+        return util.assignment(util.ident(vector), util.call(vectorConstructor, args));
     }
 
     // Constructs a vector by replacing the IV in the expression with 
@@ -98,7 +116,7 @@ vectorize = (function() {
     // Creates a statement that reads four elements from the array 'arrName' 
     // into the vector 'vecName'.
     function vecReadIndex(vecName, arrIdx, iv) {
-        return util.declassignment(util.ident(vecName), vecIndex(arrIdx, iv));
+        return util.assignment(util.ident(vecName), vecIndex(arrIdx, iv));
     }
 
     // Creates a statement that reads four elements from the SIMD vector
@@ -273,7 +291,7 @@ vectorize = (function() {
     }
 
     // Vectorizes an expression. This implements the 'vec' rules.
-    function vectorizeExpression(expr, iv, vectorMap, vectorVars, preEffects, postEffects) {
+    function vectorizeExpression(expr, iv, vectorMap, vectorVars, temps, preEffects, postEffects) {
        
         // Remove any ++, --, +=, etc...
         canonicalizeAssignments(expr);
@@ -308,6 +326,7 @@ vectorize = (function() {
                         var key = nodekey(node); // Should be iv.name.
                         if (!(key in vectorMap)) {
                             var temp = mktemp(node);
+                            temps.push(temp);
                             preEffects.push(vecReadIndex(temp, node, iv));
                             vectorMap[key] = temp;
                         }
@@ -392,6 +411,7 @@ vectorize = (function() {
                         // We have not seen this access before. Create a new
                         // temporary and add it to the preEffects.
                         var temp = mktemp(node.object);
+                        temps.push(temp);
 
                         if (node.property.isvec) {
                             // Visit the property to coerce it to a vector.
@@ -560,31 +580,39 @@ vectorize = (function() {
         // always just strings, not AST elements.
         var vectorVars = {};
 
-        // A list of statements that will populate temporaries needed in the 
-        // statement.
-        var preEffects = [];
-
         // A list of statements that retire temporaries generated in the 
         // statement to the appropriate arrays
-        var postEffects = [];
+        var retires = [];
+
+        // The list of temporaries we need to introduce to the root scope.
+        var temps = [];
 
         // Vectorize statements.
         esrecurse.visit(stmt, {
             
             ExpressionStatement: function (node) {
                 trace("Processing STMT: " + escodegen.generate(node));
-                vectorizeExpression(node.expression, iv, vectorMap, vectorVars, preEffects, postEffects);
+
+                var reads = [];
+                vectorizeExpression(node.expression, iv, vectorMap, vectorVars, temps, reads, retires);
+                util.set(node, util.block(reads.concat([util.clone(node)]), false));
             },
 
-            VariableDeclarator: function (node) {
+            VariableDeclaration: function (node) {
                 trace("Processing DECL: " + escodegen.generate(node));
-                if (node.id.type !== "Identifier") unsupported(node);
-                if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
-                    trace("    Vector: " + node.id.name);
-                    vectorVars[node.id.name] = true;
-                } else {
-                    trace("    Not a vector.");
-                }   
+
+                var reads = [];
+                for (var i = 0; i < node.declarations.length; i++) {
+                    var decl = node.declarations[i];
+                    if (decl.id.type !== "Identifier") unsupported(decl);
+                    if (vectorizeExpression(decl.init, iv, vectorMap, vectorVars, temps, reads, retires)) {
+                        trace("    Vector: " + decl.id.name);
+                        vectorVars[decl.id.name] = true;
+                    } else {
+                        trace("    Not a vector.");
+                    }
+                }
+                util.set(node, util.block(reads.concat([util.clone(node)]), false));
             },
             
             ForStatement: function (node) {
@@ -616,13 +644,9 @@ vectorize = (function() {
             stmt.needed = false;
         }   
 
-        // Now we need to add the side effects to our statement.
-        util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects), true));
-
-        // TODO: Temporarily returning vectorVars so we can determine 
-        // if a reduction variable is valid or not. Once reduction variables 
-        // are automatically detected this won't be necessary.
-        return vectorVars;
+        // Now append the retires to the statement and update our node.
+        var statements = [makeDecls(temps), util.clone(stmt)].concat(retires);
+        util.set(stmt, util.block(statements, true));
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
