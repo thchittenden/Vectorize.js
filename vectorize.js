@@ -646,6 +646,12 @@ vectorize = (function() {
     // containing reductions for each lane. This function performs reductions
     // on these vectors so they appear valid after the loop. 
     function performReductions(loop, reductions, liveouts) {
+        if (reductions.length === 0 && liveouts.length === 0) {
+            // Nothing to do.
+            return;
+        }
+        
+        // Create an array that will hold all reduction assignment expressions.
         var stmts = [clone(loop)];
 
         // For reductions we just perform the reduction across the four lanes
@@ -679,6 +685,7 @@ vectorize = (function() {
                 var cleaned = [];
                 for (var i = 0; i < node.body.length; i++) {
                     var stmt = node.body[i];
+                    this.visit(stmt);
                     if (stmt.type === 'BlockStatement' && stmt.needed === false) {
                         cleaned = cleaned.concat(stmt.body);
                     } else {
@@ -715,8 +722,8 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 vectorizeStatement(vectorloop.body, iv);
-                performReductions(vectorloop, reductions, liveouts);
                 cleanupBlocks(vectorloop.body);
+                performReductions(vectorloop, reductions, liveouts);
 
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
