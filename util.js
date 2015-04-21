@@ -1,5 +1,6 @@
 util = (function(){
     var util = {};
+    util.VEC_SIZE = 4;
 
     // Utility functions for creating AST elements.
     util.ident = function (name) {
@@ -91,7 +92,7 @@ util = (function(){
                 delete node1[prop];
             }
         }
-        
+
         // Set new properties.
         for (var prop in node2) {
             node1[prop] = node2[prop];
@@ -101,14 +102,25 @@ util = (function(){
     util.property = function (node, accessor) {
         return util.membership(node, util.ident(accessor), false);
     }
-    
+
     util.clone = function (node) {
         return JSON.parse(JSON.stringify(node));
+    }
+    util.isNumeric = function(i) {
+        return (typeof i) === 'number';
+    }
+
+    util.isInt = function(i) {
+        return Math.round(i) === i;
+    }
+
+    util.astEq = function(a, b) {
+        return JSON.stringify(a) === JSON.stringify(b);
     }
 
     util.canonAssignment = function (expr, mode) {
         var operator = expr.operator;
-        switch (expr.type) { 
+        switch (expr.type) {
             case 'UpdateExpression':
                 var op  = operator === '++' ? '+' : '-';
                 var rop = operator === '++' ? '-' : '+';
@@ -139,5 +151,3 @@ util = (function(){
 
     return util;
 })()
-
-
