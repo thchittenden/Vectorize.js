@@ -108,4 +108,14 @@ tests.push({
     }
 });
 
-
+tests.push({
+    name: 'Tricky Index',
+    args: new Array(8).fill(2),
+    fn: function fn(args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 2;
+            a[i + x - 2] = 3;
+        }
+        return args;
+    }
+})
