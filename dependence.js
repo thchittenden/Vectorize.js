@@ -84,7 +84,7 @@ dependence = (function() {
         });
 
         if (valid) {
-            return { k: retprod, c: retsum };
+            return { Scale: retprod, Offset: retsum };
         } else {
             return null;
         }
@@ -190,7 +190,6 @@ dependence = (function() {
         return null;
     }
 
-    // TODO: Deal with constant indicies.
     function lamport(a, b) {
         if (a.type === 'Identifier' && b.type === 'Identifier' && a.name === b.name) {
             return {
@@ -204,8 +203,9 @@ dependence = (function() {
         }
 
         // Both are array access
-        var aInfo = linearEqElems(a.property);
-        var bInfo = linearEqElems(b.property);
+        var aInfo = getIVFactors(a.property);
+        console.log(aInfo);
+        var bInfo = getIVFactors(b.property);
 
         if (aInfo === null || bInfo === null) {
             return null;
@@ -307,6 +307,20 @@ dependence = (function() {
     // Filters out thing's we can't handle right now. I.e two dimm arrays and
     // objects.
     function basicFilters (loop, iv) {
+        var valid_idx = function (idx) {
+            var valid_exprs = ['BinaryExpression', 'Literal', 'Identifier'];
+            var is_valid = true;
+            estraverse.traverse(idx, {
+                enter: function (node) {
+                    if (!_.contains(valid_exprs, node.type)) {
+                        console.log("FOUND " + node.type);
+                        is_valid = false;
+                    }
+                }
+            });
+            return is_valid;
+        }
+
         var allClear = true;
         esrecurse.visit(loop.body, {
             MemberExpression: function (node) {
@@ -314,35 +328,32 @@ dependence = (function() {
                     allClear = false;
                 }
 
-                if (node.computed === false) {
+                if (!valid_idx(node.property)) {
                     allClear = false;
                 }
 
-                // Make sure the index is 'simple'.
-                estraverse.visit(node.property, {
-                    enter: function (a) {
-                        if (a.type === 'Literal' && util.isInt(a.value)) {
-                            return; 
-                        }
-                    }
-                });
+                if (node.computed === false) {
+                    allClear = false;
+                }
             }
         });
         return allClear;
     }
 
     dependence.mkReductions = function (loop, iv) {
-        if (basicFilters(loop)) {
-            
+        if (!basicFilters(loop)) {
+            console.log('failed filters');
+            return null; 
         }
         var assgns = getAssgns(loop);
         for (var i = 0; i < assgns.length; i++) {
             for (var j = 0; j < assgns.length; j++) {
                 // If there is a loop carried dependence for a scalar then we
                 // can't vector it.
-                if (assgns[i].left.type == 'Identifier' && j <= i) {
+                if (assgns[i].left.type == 'Identifier' && j < i) {
                     var dep = determineDependence(assgns[i], assgns[j]);
                     if (dep === true || dep === null) {
+                        console.log('loop carried scalar dep');
                         return null;
                     }
                 }
@@ -351,6 +362,7 @@ dependence = (function() {
                 if (assgns[i].left.type == 'MemberExpression') {
                     var dep = determineDependence(assgns[i], assgns[j]);
                     if (dep === true || dep === null) {
+                        console.log('Array carried dep');
                         return null;
                     }
                 }
@@ -358,11 +370,10 @@ dependence = (function() {
         }
 
         // Look for reductions.
-        console.log(assgns);
         var reductions = _.filter(assgns, function (assgn) { 
             var eq = _.curry(util.astEq)(assgn.left);
             var uses = getUses(assgn.right);
-            return assgn.left.type == 'Identifier' && _.contains(uses, eq(use));
+            return assgn.left.type == 'Identifier' && _.any(uses, eq);
         });
         console.log(reductions);
         return reductions;
