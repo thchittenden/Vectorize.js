@@ -29,7 +29,7 @@ dependence = (function() {
                 return util.ident(iv);
             }
 
-            return estraverse.replace(util.clone(canon.right), {
+            var stepped = estraverse.replace(util.clone(canon.right), {
                 leave: function(node) {
                     if (node.type === 'Identifier' &&
                         node.name === canon.left.name) {
@@ -37,6 +37,8 @@ dependence = (function() {
                     }
                 }
             });
+
+            return util.canonExpression(stepped);
         }
         return step;
     }

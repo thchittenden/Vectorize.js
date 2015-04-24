@@ -82,18 +82,6 @@ vectorize = (function() {
         return expr;
     }
     
-    // Create a statement that declares 'vector' and assigns four elements of
-    // 'arr' to it.
-    function vecReadVector(vector, arr, idxs) {
-        var args = [];
-        for (var i = 0; i < vectorWidth; i++) {
-            args[i] = util.membership(util.ident(arr), util.property(idxs, vectorAccessors[i]), true);
-        }
-
-        // Return assignment 'vector = v(arr[idxs.x], arr[idxs.y], ...)'
-        return util.declassignment(util.ident(vector), util.call(vectorConstructor, args));
-    }
-
     // Constructs a vector by replacing the IV in the expression with 
     // vectorWidth successive steps.
     //      vecIndex("2*i", iv) 
@@ -114,19 +102,6 @@ vectorize = (function() {
         return util.declassignment(util.ident(vecName), vecIndex(arrIdx, iv));
     }
 
-    // Creates a statement that reads four elements from the SIMD vector
-    // 'vector' into 'arr[idxs.x]', 'arr[idxs.y]', etc...
-    function vecWriteVector(arr, idxs, vector) {
-        var writes = [];
-        for (var i = 0; i < vectorWidth; i++) {
-            var accessor = vectorAccessors[i];
-            var read = util.property(util.ident(vector), accessor);
-            var write = util.membership(arr, util.property(idxs, accessor), true);
-            writes[i] = util.assignment(write, read);
-        }
-        return util.block(writes, false);
-    }
-
     // Creates a statement that reads four elements from the SIMD vector 
     // 'vector' into 'arr[i]', 'arr[i+1]', etc...
     function vecWriteIndex(arr, arrIdx, vecName, iv) {
@@ -134,7 +109,7 @@ vectorize = (function() {
         for (var i = 0; i < vectorWidth; i++) {
             var idx = util.clone(arrIdx);
             var read = util.property(util.ident(vecName), vectorAccessors[i]); // vec.x, vec.y, ...
-            var write = util.membership(arr, stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i+1)], ...
+            var write = util.membership(arr, stepIndex(idx, iv, i), true);  // arr[2*i], arr[2*(i + 1)], ...
             writes[i] = util.assignment(write, read); 
         }
         return util.block(writes, false);
@@ -411,7 +386,7 @@ vectorize = (function() {
                         // Currently we don't support this because the term may
                         // be defined inside the loop and we would need to
                         // place the vector read AFTER it was defined.
-                        unsuppoted(node);
+                        unsupported(node);
                     }
                 }
                 // At this point we know that the index is of the form:

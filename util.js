@@ -204,11 +204,13 @@ util = (function(){
                 var lfactors = factors;
                 var lconstant = constant;
                 factors = {};
+                constant = 0;
                 
                 this.visit(node.right);
                 var rfactors = factors;
                 var rconstant = constant;
                 factors = {};
+                constant = 0;
 
                 // Combine the left and right factors.
                 switch (node.operator) {
@@ -216,11 +218,13 @@ util = (function(){
                         // Add all factors and constants.
                         factors = merge(lfactors, rfactors, add);
                         constant = lconstant + rconstant;
+                        break;
                     }
                     case '-': {
                         // Subtract all factors and constants.
                         factors = merge(lfactors, rfactors, sub);
                         constant = lconstant - rconstant;
+                        break;
                     }
                     case '/': {
                         // We may only divide by constants.
@@ -232,6 +236,7 @@ util = (function(){
                             }
                             constant = lconstant / rconstant;
                         }
+                        break;
                     }
                     case '*': {
                         if (!isempty(lfactors) && !isempty(rfactors)) {
@@ -247,6 +252,7 @@ util = (function(){
                             }
                         }
                         constant = lconstant * rconstant;
+                        break;
                     }
                     default: {
                         // We don't support ==, !=, <<, ^, etc...
@@ -264,6 +270,7 @@ util = (function(){
                             factors[elem] = -factors[elem];
                         }
                         constant = -constant;
+                        break;
                     }
                     default: {
                         // We don't support !, ~, etc...
@@ -284,12 +291,26 @@ util = (function(){
     util.canonExpression = function (expr) {
         
         var factors = util.getFactors(expr);
-        var ret = util.literal(factors.constant);
+        var ret = null;
         for (elem in factors.factors) {
-            ret = util.binop(util.binop(util.literal(factors.factors[elem]), '*', util.ident(elem)), '+', ret);
+            if (ret === null) {
+                // First iteration.
+                ret = util.ident(elem);
+                if (factors.factors[elem] != 1) {
+                    ret = util.binop(util.literal(factors.factors[elem]), '*', ret);
+                }
+            } else {
+                if (factors.factors[elem] != 1) {
+                    ret = util.binop(util.binop(util.literal(factors.factors[elem]), '*', util.ident(elem)), '+', ret);
+                } else {
+                    ret = util.binop(util.ident(elem), '+', ret);
+                }
+            }
+        }
+        if (factors.constant !== 0) {
+            ret = util.binop(ret, '+', util.literal(factors.constant));
         }
         return ret;
-
     }
 
     return util;
