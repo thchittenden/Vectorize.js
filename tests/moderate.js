@@ -119,3 +119,17 @@ tests.push({
         return args;
     }
 })
+
+tests.push({
+    name: 'While',
+    args: { arr: new Array(1000).fill(1), e: 100 },
+    fn: function fn (args) {
+        for (var i = 0; i < args.arr.length; i++) {
+            var x = 0; 
+            while (x++ < args.e) {
+                args.arr[i] += x;
+            }
+        }
+        return args.arr;
+    }
+});

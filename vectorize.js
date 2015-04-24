@@ -506,23 +506,12 @@ vectorize = (function() {
     
     function vectorizeStatement(stmt, iv) {
         
-        // The current mapping of array accesses to their bound temps.
-        // e.g. { a[i] -> temp1, b[2*i] -> temp2 }. 
-        // TODO: if two accesses are for the same element but calculated in 
-        // different ways (b[2*i], b[i*2]), they will end up as different 
-        // elements in this map which will lead to a consistency problem:
-        //      b[2*i] = 3; 
-        //      b[i*2] = 4; 
-        //      b[2*i] = 5; 
-        // Compiles to:
-        //      temp1 = splat(3);
-        //      temp2 = splat(4);
-        //      temp1 = splat(5);
-        //      b[2*(i+0)] = temp1.x; b[2*(i+1)] = temp1.y; ...
-        //      b[(i+0)*2] = temp2.x; b[(i+1)*2] = temp2.y; ...
-        // This could be fixed by detecting identical accesses and treating 
-        // them as the same key or outlawing different accesses to the same 
-        // array (though this seems a little draconian).
+        // The current mapping of array accesses to their bound temps. The keys
+        // are canonicalized versions of the index polynomials e.g. 
+        //      a[2 * (i + 3) + 2 * 4]
+        // will produce the key:
+        //      a_2_i_14
+        // TODO: it would be great to support nonlinear indexes too! 
         var vectorMap = {};
 
         // The current set of variables that are known vectors. These are 
@@ -559,9 +548,28 @@ vectorize = (function() {
             ForStatement: function (node) {
                 trace("Processing FOR: " + escodegen.generate(node));
                 this.visit(node.body);
+                // TODO: assert the index/update/condition are loop invariant.
             },
 
-            IfStatement: unsupported,
+            WhileStatement: function (node) {
+                trace("Processing WHILE: " + escodegen.generate(node));
+                this.visit(node.body);
+                // TODO: assert the condition is loop invariant.
+            },
+            
+            DoWhileStatement: function (node) {
+                trace("Processing DOWHILE: " + escodegen.generate(node));
+                this.visit(node.body);
+                // TODO: assert the condition is loop invariant.
+            },
+
+            IfStatement: function (node) {
+                trace("Procesing IF: " + escodegen.generate(node));
+                this.visit(node.consequent);
+                // TODO: optimization if condition is loop invariant.
+            },
+
+
             LabeledStatement: unsupported,
             BreakStatement: unsupported,
             ContinueStatement: unsupported,
@@ -569,8 +577,6 @@ vectorize = (function() {
             SwitchStatement: unsupported,
             ReturnStatement: unsupported,
             ThrowStatement: unsupported,
-            WhileStatement: unsupported,
-            DoWhileStatement: unsupported,
             ForInStatement: unsupported,
             ForOfStatement: unsupported,
             LetStatement: unsupported,
@@ -634,8 +640,7 @@ vectorize = (function() {
 
         // For liveouts we just use the last lane of the vector.
         for (var i = 0; i < liveouts.length; i++) {
-            var liveout = liveouts[i];
-            var name = liveout.name;
+            var name = liveouts[i].name;
             stmts.push(util.assignment(util.ident(name), util.property(util.ident(name), 'w')));
         }
 
@@ -677,8 +682,13 @@ vectorize = (function() {
                 
                 // Get the reduction operations in the loop. This should be 
                 // auto-detected in the future.
-                var reductions = [];
-                var liveouts = [];
+                var valid = dependence.mkReductions(node, iv);
+                if (valid === null) {
+                    // Safety checks determined we can't vectorize. Bail out.
+                    throw "dependency check failure"
+                }
+                var reductions = valid.reductions;
+                var liveouts = valid.liveouts;
                 
                 // Update the loop bounds so we perform as much of the loop in
                 // vectors as possible. This converts:
@@ -689,6 +699,9 @@ vectorize = (function() {
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 vectorizeStatement(vectorloop.body, iv);
                 cleanupBlocks(vectorloop.body);
+
+                // Update the reductions so they contain the operation as well.
+                detectOperations(reductions);
                 performReductions(vectorloop, reductions, liveouts);
 
                 // Append the serial code to the vectorized code. This allows 
