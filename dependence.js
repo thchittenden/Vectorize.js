@@ -290,7 +290,9 @@ dependence = (function() {
                 if (dep == null) {
                     return null;
                 }
-                return dep.IsDep && (Math.abs(dep.Dist) < util.VEC_SIZE);
+                return dep.IsDep && 
+                    (dep.Dist != 0) &&
+                    (Math.abs(dep.Dist) < util.VEC_SIZE);
             }
 
             return false;
