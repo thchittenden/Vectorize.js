@@ -1,9 +1,10 @@
 vectorize = (function() {
   
-    esprima = require('esprima');
-    escodegen = require('escodegen');
-    estraverse = require('estraverse');
-    esrecurse = require('esrecurse');
+    var esprima = require('esprima');
+    var escodegen = require('escodegen');
+    var estraverse = require('estraverse');
+    var esrecurse = require('esrecurse');
+    var _ = require('underscore');
 
     function unsupported(node) {
         throw ("unsupported operation: " + escodegen.generate(node))
@@ -698,6 +699,18 @@ vectorize = (function() {
 
     }
 
+    function createFunction(ast) {
+        
+        // Extract the arguments.
+        args = _.pluck(ast.params, 'name');
+
+        // Create and return the function.
+        var fn = new Function(args, escodegen.generate(ast.body));
+        fn.name = ast.id.name;
+        fn.displayName = ast.id.name;
+        return fn;
+    }
+
     function vectorizeFunction(fn) {
         if (typeof fn !== "function") {
             throw "argument must be a function";
@@ -709,21 +722,14 @@ vectorize = (function() {
             // Parse the function to an AST and convert to a function expression so
             // we can return it.
             var ast = esprima.parse(fn.toString());
-            ast = makeFunctionExpression(ast);
-            console.log(fn.toString());    
+            var fn = ast.body[0];
 
             // Vectorize loops.
-            vectorizeLoops(ast);
+            vectorizeLoops(fn);
 
-            // Transform the AST back to a function string.
-            var fnstr = escodegen.generate(ast);
-            console.log(fnstr);
-
-            // TODO change this to use the Function constructor because maybe
-            // that will give better performance?.
-            ret.fn = eval(fnstr);
+            // Convert the AST to a function object.
+            ret.fn = createFunction(fn);
             ret.vectorized = true;
-
         } catch (err) {
             // We can't vectorize the function for some reason, just return 
             // the original function so that nothing breaks!

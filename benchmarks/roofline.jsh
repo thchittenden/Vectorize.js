@@ -34,7 +34,7 @@ function vector (args, n) {
 }
 
 console.log = function (args) { };
-vectorizedScalar = vectorize.me(scalar);
+vectorizedScalar = vectorize.me(scalar).fn;
 
 var samples = [
 { e: 2500, n: 4000 },

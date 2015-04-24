@@ -224,3 +224,14 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Two Step',
+    args: new Array(100).fill(5),
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i+= 2) {
+            args[i] = 10;
+        }
+        return args;
+    }
+});

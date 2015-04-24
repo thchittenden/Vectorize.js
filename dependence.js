@@ -1,5 +1,8 @@
 dependence = (function() {
-    _ = require('lodash');
+    var estraverse = require('estraverse');
+    var esrecurse = require('esrecurse');
+    var _ = require('underscore');
+    
     var dependence = {};
 
     function getIVFactors(expr, iv) {
@@ -314,7 +317,7 @@ dependence = (function() {
                 name = node.argument.name;
             },
             AssignmentExpression: function (node) {
-
+                name = node.left.name;
             }
         });
         if (name === undefined) {

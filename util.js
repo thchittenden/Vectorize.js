@@ -1,4 +1,5 @@
 util = (function(){
+    var esrecurse = require('esrecurse');
     var util = {};
     util.VEC_SIZE = 4;
 
