@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="http://code.jquery.com/qunit/qunit-1.17.1.css">
     <link rel="stylesheet" href="https://google-code-prettify.googlecode.com/svn/loader/prettify.css">
     <link rel="stylesheet" href="../lib/qunit-print.css">
+    <link rel="stylesheet" href="../lib/qunit-warn.css">
     <style>
         .test-diff {
             display: none;
@@ -19,6 +20,7 @@
     <script src="http://code.jquery.com/qunit/qunit-1.17.1.js"></script>
     <script src="https://google-code-prettify.googlecode.com/svn/loader/prettify.js"></script>
     <script src="../lib/qunit-print.js"></script>
+    <script src="../lib/qunit-warn.js"></script>
     <script src="../lib/simd.js"></script>
     <script src="../bin/vectorize.browser.js"></script>
     <script>
@@ -33,12 +35,20 @@
             // to the last test in the array! Bah!
             return function (assert) {
                 try {
-                    var scalarFn = test.fn;
-                    var vectorFn = vectorize.me(test.fn);
-                    QUnit.print("<pre class='prettyprint'>" + scalarFn + "</pre>");
-                    QUnit.print("<pre class='prettyprint'>" + vectorFn + "</pre>");
-                    var args = test.args;
-                    assert.deepEqual(vectorFn(clone(args)), scalarFn(clone(args)));
+                    var res = vectorize.me(test.fn);
+                    if (res.vectorized) {
+                        var scalarFn = test.fn;
+                        var vectorFn = res.fn;
+                        QUnit.print("<pre class='prettyprint'>" + scalarFn + "</pre>");
+                        QUnit.print("<pre class='prettyprint'>" + vectorFn + "</pre>");
+                        var args = test.args;
+                        assert.deepEqual(vectorFn(clone(args)), scalarFn(clone(args)));
+                    } else {
+                        QUnit.warn();
+                        QUnit.print("<p>Unable to vectorize: " + res.reason + "</p>");
+                        QUnit.print("<pre class='prettyprint'>" + test.fn + "</pre>");
+                        assert.ok(true); // Appease QUnit.
+                    }
                 } catch (err) {
                     assert.ok(false, 'THROWN: ' + err);
                 }

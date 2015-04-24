@@ -212,3 +212,15 @@ tests.push({
         return args;
     }
 });
+
+tests.push({
+    name: 'Constant Index',
+    args: [ 1, 2, 3, 4 ,5 , 7, 8],
+    fn: function fn (args) {
+        var b = [41, 42, 43]
+        for (var i = 0; i < args.length; i++) {
+            args[i] = b[1];
+        }
+        return args;
+    }
+});

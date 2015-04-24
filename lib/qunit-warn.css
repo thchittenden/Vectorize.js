@@ -1,0 +1,8 @@
+#qunit-tests .warn { 
+    color: #000; 
+    background-color: #EE8; 
+}
+
+#qunit-tests .warn .test-name {
+    color: #000;
+}
