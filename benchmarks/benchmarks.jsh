@@ -34,7 +34,7 @@ function bench (benchfn, args) {
 for (i in benchmarks) {
     var benchmark = benchmarks[i];
     var scalarFn = benchmark.fn;
-    var vectorFn = vectorize.me(benchmark.fn);
+    var vectorFn = vectorize.me(benchmark.fn).fn;
     var handFn = benchmark.simdfn;
 
     // Run the benchmarks.

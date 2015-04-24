@@ -29,8 +29,11 @@
             var moe = 100 * bench.stats.moe / bench.times.period;
             return period.toFixed(3) + "ms ± " + moe.toFixed(2) + "%";
         };
-        function makeBenchFn (scalarFn, vectorFn, args) {
+        function makeBenchFn (scalarFn, args) {
             return function (assert) {
+                var res = vectorize.me(scalarFn);
+                var vectorFn = res.fn;
+                assert.ok(res.vectorized, "Vectorized");
                 async(function() { assert.ok(true, "Scalar: " + bench(scalarFn, args)) }, assert.async());
                 async(function() { assert.ok(true, "Vector: " + bench(vectorFn, args)) }, assert.async());
             };
@@ -40,7 +43,7 @@
             QUnit.module("Benchmarks");
             for (var i = 0; i < benchmarks.length; i++) {
                 var bench = benchmarks[i];
-                QUnit.test(bench.name, makeBenchFn(bench.fn, vectorize.me(bench.fn), bench.args));
+                QUnit.test(bench.name, makeBenchFn(bench.fn, bench.args));
             }
         };
     </script>
