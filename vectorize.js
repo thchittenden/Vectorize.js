@@ -35,9 +35,22 @@ vectorize = (function() {
     function splat(val) {
         return util.call(util.property(vectorConstructor, 'splat'), [val]);
     }
-    function nodekey(node) {
-        // Need a unique string for the node! Uhhh...
-        return escodegen.generate(node);
+
+    // Creates a unique key for an array and its linear index. Given something
+    // like (obj.arr[a*i + b]) we'll get a string: 'obj_arr_a_i_b'.
+    function vectorkey(arr, idxfactors) {
+        
+        // Create a string for the array.
+        var id = escodegen.generate(arr);
+        id = id.replace(/[-\+\*\/\.\[\]]/g, '_') + '_';
+
+        // Append keys for the factors.
+        for (var elem in idxfactors.factors) {
+            id += idxfactors.factors[elem] + "_" + elem + "_";
+        }
+        id += idxfactors.constant;
+
+        return id;
     }
     function mktemp(node) {
         var id = escodegen.generate(node);
@@ -298,14 +311,14 @@ vectorize = (function() {
             Identifier: function (node) {
                 // We only need to parallelize the identifier if we're 
                 // reading. Otherwise it will just overwrite it. 
-                if (mode === READ) {
+                if (mode == READ) {
                     if (node.isidx) {
                         // We're reading the induction variable. This means 
                         // we're using it as part of an arithmetic expression
                         // with a vector or that will be assigned to a 
                         // variable. In this case we follow the same process as
                         // when using a member expression like a[i].
-                        var key = nodekey(node); // Should be iv.name.
+                        var key = iv.name;
                         if (!(key in vectorMap)) {
                             var temp = mktemp(node);
                             preEffects.push(vecReadIndex(temp, node, iv));
@@ -372,12 +385,44 @@ vectorize = (function() {
                     return;
                 }
 
-                // Cache the key since it will change when we visit the 
-                // node property.
-                var key = nodekey(node);
+                if (node.property.isvec) {
+                    // We currently don't suppot indexing by a vector because
+                    // it's basically undecideable if it's safe. We SHOULD 
+                    // support a mode that allows the user to bypass safety 
+                    // checks in case they know better than us however!
+                    unsupported(node);
+                }
 
-                // Otherwise, this is a vector member expression. When 
-                // processing a member expression, it will either be when 
+                // Extract the factors on the polynomial that is the index.
+                var factors = util.getFactors(node.property);
+                if (factors === null) {
+                    // This means that the index was nonlinear. Currently this
+                    // is unsupported because it's very difficult to determine
+                    // if two accesses are the same (NP-Hard actually!). Again,
+                    // we should support a mode that allows the user to bypass
+                    // safety and let them take the responsibility for when 
+                    // abs(x) and (x * sign(x)) collide! 
+                    unsupported(node);
+                }
+
+                for (term in factors.factors) {
+                    if (term !== iv.name) {
+                        // This means there was a non IV term in the index.
+                        // Currently we don't support this because the term may
+                        // be defined inside the loop and we would need to
+                        // place the vector read AFTER it was defined.
+                        unsuppoted(node);
+                    }
+                }
+                // At this point we know that the index is of the form:
+                //      a*iv + b
+                // which is the only mode we currently support :(
+                
+                // Create a unique key for the node so we don't continually
+                // recreate this vector.
+                var key = vectorkey(node.object, factors);
+
+                // When processing a member expression, it will either be when
                 // reading from it or writing to it. This changes our behavior:
                 if (mode === READ) {
                     // Performing a read. Convert this to a read from a temp
@@ -387,44 +432,13 @@ vectorize = (function() {
                     // We want to compile this to:
                     //      temp1 = vec(a[i], a[i+1], a[i+2], a[i+3]);
                     //      x = temp1;
-                   
+                
                     if (!(key in vectorMap)) {
                         // We have not seen this access before. Create a new
                         // temporary and add it to the preEffects.
                         var temp = mktemp(node.object);
-
-                        if (node.property.isvec) {
-                            // Visit the property to coerce it to a vector.
-                            this.visit(node.property);
-
-                            // Now we need to create a new vector indexing with
-                            // the lanes of the property:
-                            //      v(a[prop.x], a[prop.y], ...);
-                            // Currently this is unsupported as it will require
-                            // converting this expression to a sequence 
-                            // expression which assigns the property to a temp,
-                            // then performs the dereference on the temp to
-                            // avoid recalculating the indices four times.
-                            // Consider:
-                            //      a[b[i] + 2];
-                            // This will be naively compiled to:
-                            //      v(a[add(temp_b, splat(2)).x], a[add(temp_b, splat(2)).y], ...);
-                            // While we want to compile it to:
-                            //      (temp = add(temp_b, splat(2)), v(a[temp.x], b[temp.y], ...));
-                            vectorMap[key] = { name: temp, retired: false };
-                            preEffects.push(vecReadVector(temp, node.object.name, node.property));
-
-                        } else {
-                            assert(node.property.isidx);
-                            // The index is based on the induction variable. 
-                            // There is a problem if this property uses a 
-                            // variable calculated AFTER the pre-effects. This 
-                            // can be mitigated by making preeffects act
-                            // immediately before the current expression 
-                            // instead of before all statements in the block.
-                            vectorMap[key] = { name: temp, retired: false };
-                            preEffects.push(vecReadIndex(temp, node, iv));
-                        }
+                        vectorMap[key] = { name: temp, retired: false };
+                        preEffects.push(vecReadIndex(temp, node, iv));
                     }
 
                     // Retrieve the temp from the vector map and use it.
@@ -453,28 +467,7 @@ vectorize = (function() {
                     if (!temp.retired) {
                         // This is the first write to this temp. Add a 
                         // writeback to the postEffects.
-                        if (node.property.isvec) {
-                            // Visit the property to coerce it to a vector.
-                            var oldMode = mode;
-                            mode = READ;
-                            this.visit(node.property);
-                            mode = oldMode;
-                            
-                            // Construct the write and push it to the post effects.
-                            postEffects.push(vecWriteVector(node.object, node.property, temp.name));
-
-                        } else if (node.property.isidx) {
-                            // The index is based on the induction variable.
-                            // Generate a write block for the post effects.
-                            postEffects.push(vecWriteIndex(node.object, node.property, temp.name, iv));
-
-                        } else {
-                            // The index is constant. This is a live-out dependency.
-                            // We should be able to support this by just assigning the
-                            // last element of the vector?
-                            unsupported(node);
-
-                        }
+                        postEffects.push(vecWriteIndex(node.object, node.property, temp.name, iv));
                         temp.retired = true;
                     }
 
@@ -618,11 +611,6 @@ vectorize = (function() {
 
         // Now we need to add the side effects to our statement.
         util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects), true));
-
-        // TODO: Temporarily returning vectorVars so we can determine 
-        // if a reduction variable is valid or not. Once reduction variables 
-        // are automatically detected this won't be necessary.
-        return vectorVars;
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -654,7 +642,7 @@ vectorize = (function() {
         }
         
         // Create an array that will hold all reduction assignment expressions.
-        var stmts = [clone(loop)];
+        var stmts = [util.clone(loop)];
 
         // For reductions we just perform the reduction across the four lanes
         // of the vector.
@@ -701,8 +689,7 @@ vectorize = (function() {
 
     function vectorizeLoops(ast) {
        
-        // We only know how to vectorize for loops at the moment. And they'll
-        // be wrong if they don't iterate some multiple of 4 times.
+        // We only know how to vectorize for loops at the moment.
         esrecurse.visit(ast, {
             ForStatement: function (node) {
                 var vectorloop = util.clone(node);
@@ -740,23 +727,37 @@ vectorize = (function() {
             throw "argument must be a function";
         }
 
-        // Parse the function to an AST and convert to a function expression so
-        // we can return it.
-        var ast = esprima.parse(fn.toString());
-        ast = makeFunctionExpression(ast);
-        console.log(fn.toString());    
+        var ret = {};
 
-        // Vectorize loops.
-        vectorizeLoops(ast);
+        try {
+            // Parse the function to an AST and convert to a function expression so
+            // we can return it.
+            var ast = esprima.parse(fn.toString());
+            ast = makeFunctionExpression(ast);
+            console.log(fn.toString());    
 
-        // Transform the AST back to a function string.
-        var fnstr = escodegen.generate(ast);
-        console.log(fnstr);
+            // Vectorize loops.
+            vectorizeLoops(ast);
 
-        
+            // Transform the AST back to a function string.
+            var fnstr = escodegen.generate(ast);
+            console.log(fnstr);
 
-        // Convert the string to a javascript function and return it.
-        return eval(fnstr);
+            // TODO change this to use the Function constructor because maybe
+            // that will give better performance?.
+            ret.fn = eval(fnstr);
+            ret.vectorized = true;
+
+        } catch (err) {
+            // We can't vectorize the function for some reason, just return 
+            // the original function so that nothing breaks!
+            console.log("Unable to vectorize function! " + err);
+            ret.fn = fn;
+            ret.vectorized = false;
+            ret.reason = err; 
+        }
+
+        return ret;
     }
     
     var vectorize = {};

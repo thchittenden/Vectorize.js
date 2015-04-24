@@ -137,6 +137,149 @@ util = (function(){
         }
     }
 
+    // Gets the factors on all terms in an expression. If the expression cannot
+    // be reduced to a polynomial this function will return null.
+    util.getFactors = function (ast) {
+        
+        var validTypes = ["Literal", "Identifier", "BinaryExpression", "UnaryExpression"];
+        if (validTypes.indexOf(ast.type) == -1) {
+            // Invalid root type.
+            return null;
+        }
+       
+        function add(a, b) { return a + b }
+        function sub(a, b) { return a - b }
+        function merge(lfactors, rfactors, op) {
+            var out = {};
+            for (elem in lfactors) {
+                if (elem in rfactors) {
+                    out[elem] = op(lfactors[elem], rfactors[elem]);       
+                } else {
+                    out[elem] = lfactors[elem];
+                }
+            }
+            for (elem in rfactors) {
+                if (elem in lfactors) {
+                    // Already accounted for.
+                } else {
+                    out[elem] = rfactors[elem];
+                }
+            }
+            return out;
+        }
+        function isempty(obj) {
+            for (x in obj) {
+                return false;
+            }
+            return true;
+        }
+
+        var valid = true;
+        var factors = {};
+        var constant = 0;
+        esrecurse.visit(ast, {
+            Literal: function (node) {
+                constant = node.value;
+            },
+            Identifier: function (node) {
+                factors[node.name] = 1;
+            },
+            BinaryExpression: function (node) {
+                if (validTypes.indexOf(node.left.type) == -1) valid = false;
+                if (validTypes.indexOf(node.right.type) == -1) valid = false;
+                
+                this.visit(node.left);
+                var lfactors = factors;
+                var lconstant = constant;
+                factors = {};
+                
+                this.visit(node.right);
+                var rfactors = factors;
+                var rconstant = constant;
+                factors = {};
+
+                // Combine the left and right factors.
+                switch (node.operator) {
+                    case '+': {
+                        // Add all factors and constants.
+                        factors = merge(lfactors, rfactors, add);
+                        constant = lconstant + rconstant;
+                    }
+                    case '-': {
+                        // Subtract all factors and constants.
+                        factors = merge(lfactors, rfactors, sub);
+                        constant = lconstant - rconstant;
+                    }
+                    case '/': {
+                        // We may only divide by constants.
+                        if (!isempty(rprod)) {
+                            valid = false;
+                        } else {
+                            for (elem in lfactors) {
+                                factors[elem] = lfactors[elem] / rconstant;
+                            }
+                            constant = lconstant / rconstant;
+                        }
+                    }
+                    case '*': {
+                        if (!isempty(lfactors) && !isempty(rfactors)) {
+                            // This would result in quadratic terms...
+                            valid = false;
+                        } else if (!isempty(lfactors)) {
+                            for (elem in lfactors) {
+                                factors[elem] = lfactors[elem] * rconstant;
+                            }
+                        } else if (!isempty(rfactors)) {
+                            for (elem in rfactors) {
+                                factors[elem] = rfactors[elem] * lconstant;
+                            }
+                        }
+                        constant = lconstant * rconstant;
+                    }
+                    default: {
+                        // We don't support ==, !=, <<, ^, etc...
+                        valid = false;
+                    }
+                }
+            },
+            UnaryExpression: function (node) {
+                
+                this.visit(node.argument);
+
+                switch(node.operator) {
+                    case '-': {
+                        for (elem in factors) {
+                            factors[elem] = -factors[elem];
+                        }
+                        constant = -constant;
+                    }
+                    default: {
+                        // We don't support !, ~, etc...
+                        valid = false;
+                    }
+                }
+            }
+        });
+
+        if (valid) {
+            return { factors: factors, constant: constant }
+        } else {
+            return null;
+        }
+
+    }
+
+    util.canonExpression = function (expr) {
+        
+        var factors = util.getFactors(expr);
+        var ret = util.literal(factors.constant);
+        for (elem in factors.factors) {
+            ret = util.binop(util.binop(util.literal(factors.factors[elem]), '*', util.ident(elem)), '+', ret);
+        }
+        return ret;
+
+    }
+
     return util;
 })()
 
