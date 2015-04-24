@@ -697,6 +697,7 @@ vectorize = (function() {
                 
                 // Detect the induction variable in the loop.
                 var iv = dependence.detectIV(node);
+                //console.log(dependence.mkReductions(scalarloop, iv));
                 
                 // Get the reduction operations in the loop. This should be 
                 // auto-detected in the future.
