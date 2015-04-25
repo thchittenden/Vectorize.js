@@ -780,21 +780,33 @@ vectorize = (function() {
             },
             
             ForStatement: function (node) {
-                trace("Processing FOR: " + escodegen.generate(node));
-                this.visit(node.body);
-                // TODO: assert the index/update/condition are loop invariant.
+                if (node.test !== null && node.test.invariant) {
+                    trace("Processing FOR: " + escodegen.generate(node));
+                    this.visit(node.body);
+                } else {
+                    trace ("Test not loop invariant: " + escodegen.generate(node.test));
+                    unsupported(node);
+                }
             },
 
             WhileStatement: function (node) {
-                trace("Processing WHILE: " + escodegen.generate(node));
-                this.visit(node.body);
-                // TODO: assert the condition is loop invariant.
+                if (node.test.invariant) {
+                    trace("Processing WHILE: " + escodegen.generate(node));
+                    this.visit(node.body);
+                } else {
+                    trace ("Test not loop invariant: " + escodegen.generate(node.test));
+                    unsupported(node);
+                }
             },
             
             DoWhileStatement: function (node) {
-                trace("Processing DOWHILE: " + escodegen.generate(node));
-                this.visit(node.body);
-                // TODO: assert the condition is loop invariant.
+                if (node.test.invariant) {
+                    trace("Processing DOWHILE: " + escodegen.generate(node));
+                    this.visit(node.body);
+                } else {
+                    trace ("Test not loop invariant: " + escodegen.generate(node.test));
+                    unsupported(node);
+                }
             },
 
             IfStatement: function (node) {
@@ -922,13 +934,13 @@ vectorize = (function() {
                 
                 // Get the reduction operations in the loop. This should be 
                 // auto-detected in the future.
-                var valid = dependence.mkReductions(vectorloop, iv);
+                var valid = true; // dependence.mkReductions(vectorloop, iv);
                 if (valid === null) {
                     // Safety checks determined we can't vectorize. Bail out.
                     throw "dependency check failure"
                 }
-                var reductions = valid.reductions;
-                var liveouts = valid.liveouts;
+                //var reductions = valid.reductions;
+                //var liveouts = valid.liveouts;
                 
                 // Update the loop bounds so we perform as much of the loop in
                 // vectors as possible. This converts:
@@ -941,7 +953,7 @@ vectorize = (function() {
                 cleanupBlocks(vectorloop.body);
 
                 // Perform the reductions at the end of the loop.
-                performReductions(vectorloop, reductions, liveouts);
+                //performReductions(vectorloop, reductions, liveouts);
 
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
