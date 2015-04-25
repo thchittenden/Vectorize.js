@@ -37,13 +37,17 @@ vectorize = (function() {
         return util.call(util.property(vectorConstructor, 'splat'), [val]);
     }
 
+    function nodekey(node) {
+        var id = escodegen.generate(node);
+        return id.replace(/[-\+\*\/\.\[\]]/g, '_');
+    }
+
     // Creates a unique key for an array and its linear index. Given something
     // like (obj.arr[a*i + b]) we'll get a string: 'obj_arr_a_i_b'.
     function vectorkey(arr, idxfactors) {
         
         // Create a string for the array.
-        var id = escodegen.generate(arr);
-        id = id.replace(/[-\+\*\/\.\[\]]/g, '_') + '_';
+        var id = nodekey(arr) + '_';
 
         // Append keys for the factors.
         for (var elem in idxfactors.factors) {
@@ -54,9 +58,8 @@ vectorize = (function() {
         return id;
     }
     function mktemp(node) {
-        var id = escodegen.generate(node);
-        var safe_id = id.replace(/[-\+\*\/\.\[\]]/g, '_');
-        return 'temp' + tempIdx++ + '_' + safe_id;
+        var id = nodekey(node)
+        return 'temp' + tempIdx++ + '_' + id;
     }
 
     // Converts a function to a function expression so we can manipulate 
@@ -133,6 +136,240 @@ vectorize = (function() {
                 
                 util.set(update, util.canonAssignment(update, 'strict'));
             }
+        });
+    }
+
+    // Augments a loop AST with property 'invariant'. This property indicates
+    // whether every node is loop invariant or not. This allows us to determine
+    // whether certain operations are safe such as nested loops.
+    // This definition of 'invariant' is slightly more conservative than need
+    // be in that it will mark any variable defined in the loop as variant even
+    // if its definition dominates all uses.
+    function markLoopInvariant(ast, iv) {
+       
+        var valid = true;
+
+        // defd_vars is a set containing the variables that are defined 
+        // anywhere in the loop. If a variable is not in inv_vars and in 
+        // defd_vars then it is not invariant.
+        var defd_vars = {};
+        defd_vars[iv.name] = true;
+
+        // inv_vars is a set containing the variables that are DEFINITELY
+        // invariant at the current point in the loop. This means they were
+        // assigned some loop invariant expression.
+        var inv_vars = {}; 
+
+        // This variable is used by the conditional checker in order to check 
+        // for variables that were newly defined in the branches.
+        var defd_new = {};
+
+        var READ = 0;
+        var WRITE_INV = 1;
+        var WRITE_VAR = 2;
+        var mode = READ;
+
+        function mark (node, val) {
+            if (node.invariant !== val) {
+                node.invariant = val;
+                valid = false;
+            }
+        }
+
+        function mark_var (node, dep) {
+            if (mode === READ) {
+                mark (node, nodekey(node) in inv_vars || !(nodekey(node) in defd_vars));
+            } else {
+                mark (node, mode === WRITE_INV);
+                defd_vars[nodekey(node)] = true;
+                defd_new[nodekey(node)] = true;
+                if (mode === WRITE_INV) {
+                    inv_vars[nodekey(node)] = dep || true;
+                } else {
+                    delete inv_vars[nodekey(node)];
+                }
+            }   
+        }
+
+        do {
+            valid = true;
+            esrecurse.visit(ast, {
+                Literal: function (node) {
+                    mark(node, true);
+                },
+                ThisExpression: function (node) {
+                    mark_var(node);
+                },
+                Identifier: function (node) {
+                    mark_var(node);
+                },
+                BinaryExpression: function (node) {
+                    this.visit(node.left);
+                    this.visit(node.right);
+                    mark(node, node.left.invariant && node.right.invariant);
+                },
+                UnaryExpression: function (node) {
+                    this.visit(node.argument);
+                    mark(node, node.argument.invariant);
+                },
+                LogicalExpression: function (node) {
+                    this.visit(node.left);
+                    this.visit(node.right);
+                    mark(node, node.left.invariant && node.right.invariant);
+                },
+                MemberExpression: function (node) {
+                    if (!node.computed) {
+                        // This is just like a variable.
+                        mark_var(node);
+                    } else {
+                        var old_mode = mode;
+                        mode = READ;
+                        this.visit(node.object);
+                        this.visit(node.property);
+                        mode = old_mode;
+                        if (node.object.invariant && node.property.invariant) {
+                            // If the property is invariant, then we treat
+                            // this node just like a variable.
+                            mark_var(node, nodekey(node.object));
+                        } else if (node.object.invariant) {
+                            // The property isn't invariant. Invalidate
+                            // everyone who is dependent on this array as we
+                            // could be writing to any index.
+                            for (elem in inv_vars) {
+                                if (inv_vars[elem] === nodekey(node.object)) {
+                                    delete inv_vars[elem];
+                                }
+                            }
+                            mark (node, false);
+                        } else {
+                            // The object isn't invariant. This means we could
+                            // be writing to ANY array so invalidate EVERYONE
+                            // who depends on ANYTHING. This is a very
+                            // conservative approach but alias tracking is hard
+                            // so this is what we're gonna do.
+                            for (elem in inv_vars) {
+                                if (inv_vars[elem] !== true) {
+                                    // This indicates it's not just a marker. 
+                                    delete inv_vars[elem];
+                                }
+                            }
+                            mark(node, false);
+                        }
+                    }
+                },
+                AssignmentExpression: function (node) {
+                    var old_mode = mode;
+                    mode = READ;
+                    this.visit(node.right); 
+                    mode = node.right.invariant ? WRITE_INV : WRITE_VAR;
+                    this.visit(node.left);
+                    mode = old_mode;
+                    
+                    // Since an assignment is the value of the left node, we'll
+                    // mark it as such.
+                    mark(node, node.left.invariant);
+                },
+                VariableDeclarator: function (node) {
+                    if (node.init !== null) {
+                        var old_mode = mode;
+                        mode = READ;
+                        this.visit(node.init);
+                        mode = node.init.invariant ? WRITE_INV : WRITE_VAR;
+                        this.visit(node.id);
+                        mode = old_mode;
+
+                        mark(node, node.id.invariant);
+                    }
+                },
+                ConditionalExpression: function (node) {
+                    this.visit(node.test);
+                    this.visit(node.alternate);
+                    this.visit(node.consequent);
+                    mark(node, node.test.invariant && node.alternate.invariant && node.consequent.invariant);
+                },
+                CallExpression: function (node) {
+                    var pseudo_this = this;
+                    _.map(node.arguments, function (n) { pseudo_this.visit(n) });
+                    mark(node, false); // We have no idea if this function is pure or not...
+                },
+                ArrayExpression: function (node) {
+                    var pseudo_this = this;
+                    _.map(node.elements, function (n) { pseudo_this.visit(n); });
+                    mark (node, _.every(_.pluck(node.elements, 'invariant'), _.identity));
+                },
+                SequenceExpression: function (node) {
+                    var pseudo_this = this;
+                    _.map(node.expressions, function (n) { pseudo_this.visit(n); });
+                    mark (node, _.last(node.expressions).invariant);
+                },
+                ObjectExpression: unsupported,
+                NewExpression: unsupported,
+                ArrowExpression: unsupported,
+                YieldExpression: unsupported,
+                ComprehensionExpression: unsupported,
+                GeneratorExpression: unsupported,
+                GraphExpression: unsupported,
+                GraphIndexExpression: unsupported,
+                UpdateExpression: function () { throw "update expression remains!" },
+
+                IfStatement: function (node) {
+                    this.visit(node.test);
+                   
+                    // Save the defd_new set so we can see what these branches
+                    // define.
+                    var pre_defd_new = defd_new;
+                    defd_new = {};
+
+                    // Save state to visit branch one.
+                    var pre_inv_vars = inv_vars;
+                    var pre_defd_vars = defd_vars;
+                    inv_vars = util.clone(pre_inv_vars);
+                    defd_vars = util.clone(pre_defd_vars);
+                    this.visit(node.consequent);
+                    
+                    // Save state to visit branch two.
+                    var b1_inv_vars = inv_vars;
+                    var b1_defd_vars = defd_vars;
+                    inv_vars = util.clone(pre_inv_vars);
+                    defd_vars = util.clone(pre_defd_vars);
+                    this.visit(node.alternate);
+                    var b2_inv_vars = inv_vars;
+                    var b2_defd_vars = defd_vars;
+                   
+                    // Merge invariant sets. Conditionals cannot introduce 
+                    // any new invariant variables, but they can remove them.
+                    inv_vars = pre_inv_vars;
+                    inv_vars = _.pick(inv_vars, _.keys(b1_inv_vars));
+                    inv_vars = _.pick(inv_vars, _.keys(b2_inv_vars));
+                    inv_vars = _.omit(inv_vars, _.keys(defd_new));
+
+                    // Merge defined sets.
+                    defd_vars = pre_defd_vars;
+                    defd_vars = _.extend(defd_vars, b1_defd_vars);
+                    defd_vars = _.extend(defd_vars, b2_defd_vars);
+
+                    // Restore the old defd_new set and update it with the new
+                    // defined variables.
+                    defd_new = _.extend(pre_defd_new, defd_new);
+                },
+
+                // This would be a HUGE pain.
+                SwitchStatement: unsupported,
+                WithStatement: unsupported,
+            });
+            inv_vars = {};
+        } while (!valid);
+    }
+
+    function logInvariant(ast) {
+        estraverse.traverse(ast, {
+            enter: function (node) {
+                if (node.invariant === true) {
+                    console.log('Invariant: ' + escodegen.generate(node));
+                } else if (node.invariant === false) {
+                    console.log('Variant: ' + escodegen.generate(node));
+                }
+            },
         });
     }
 
@@ -264,9 +501,6 @@ vectorize = (function() {
     // Vectorizes an expression. This implements the 'vec' rules.
     function vectorizeExpression(expr, iv, vectorMap, vectorVars, preEffects, postEffects) {
        
-        // Remove any ++, --, +=, etc...
-        canonicalizeAssignments(expr);
-
         // Augment with isidx/isvec properties.
         markVectorExpressions(expr, iv, vectorVars);
         if (!(expr.isvec || expr.isidx)) {
@@ -676,13 +910,19 @@ vectorize = (function() {
                 var vectorloop = util.clone(node);
                 var scalarloop = util.clone(node);
                 
+                // Canonicalize assignments to make things easier.
+                canonicalizeAssignments(vectorloop.body);
+
                 // Detect the induction variable in the loop.
-                var iv = dependence.detectIV(node);
-                //console.log(dependence.mkReductions(scalarloop, iv));
+                var iv = dependence.detectIV(vectorloop);
+               
+                // Mark loop invariant expressions.
+                markLoopInvariant(vectorloop.body, iv);
+                logInvariant(vectorloop);
                 
                 // Get the reduction operations in the loop. This should be 
                 // auto-detected in the future.
-                var valid = dependence.mkReductions(node, iv);
+                var valid = dependence.mkReductions(vectorloop, iv);
                 if (valid === null) {
                     // Safety checks determined we can't vectorize. Bail out.
                     throw "dependency check failure"
@@ -700,8 +940,7 @@ vectorize = (function() {
                 vectorizeStatement(vectorloop.body, iv);
                 cleanupBlocks(vectorloop.body);
 
-                // Update the reductions so they contain the operation as well.
-                detectOperations(reductions);
+                // Perform the reductions at the end of the loop.
                 performReductions(vectorloop, reductions, liveouts);
 
                 // Append the serial code to the vectorized code. This allows 

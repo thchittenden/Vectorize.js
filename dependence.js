@@ -303,9 +303,9 @@ dependence = (function() {
 
         // Look for reductions.
         var reductions = _.filter(assgns, function (assgn) { 
-            var eq = _.curry(util.astEq)(assgn.left);
+            var eq = function (b) { return util.astEq(assgn.left, b); };
             var uses = getUses(assgn.right);
-            return assgn.left.type == 'Identifier' && _.any(uses, eq);
+            return assgn.left.type == 'Identifier' && _.some(uses, eq);
         });
         console.log(reductions);
         return reductions;
