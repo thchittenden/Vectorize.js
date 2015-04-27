@@ -1,7 +1,7 @@
 // These are tests known to fail!
 tests = [];
 mods.push({
-    name: 'Failures',
+    name: 'Hard',
     order: 100, // Perform these last.
     tests: tests,
 });
