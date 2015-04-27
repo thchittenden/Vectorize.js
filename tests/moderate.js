@@ -137,3 +137,59 @@ tests.push({
         return w + b;
     }
 });
+
+tests.push({
+    name: 'While',
+    args: { arr: new Array(1000).fill(1), e: 100 },
+    fn: function fn (args) {
+        for (var i = 0; i < args.arr.length; i++) {
+            var x = 0; 
+            while (x++ < args.e) {
+                args.arr[i] += x;
+            }
+        }
+        return args.arr;
+    }
+});
+
+tests.push({
+    name: 'Loop Invariance',
+    args: [ 0, 1, 2, 3, 4, 5, 6, 7 ],
+    fn: function fn (args) {
+        var a = 0;
+        var b = [1, 2, 3];
+        var c = { i1: 0, i2: 1 };
+        var d = [0];
+        for (var i = 0; i < args.length; i++) {
+            
+            var y = b[0]; // LV
+            var k = x; // LV
+            var r = d[0]; // LV
+            d[0] = 2; // LI
+            var p = d[0]; // LI
+            var x = a; // LI
+            b[0] = x; // LI
+            var z = b[0] + x; // LI
+            var w = c.i1; // LI
+            var u = args[c.i2]; // LI
+            b[i] = 3; // LV
+            var q = b[0]; // LV
+
+            var m = args[i] + u; // LV
+            var n = args[0] + w; // LI
+            if (m > 0) {
+                n = 2; // LI
+                u = n; // LI
+            } else {
+                n = 3; // LI
+                u = n; // LI
+            }
+            // n, u LV
+
+            var l = args[0] + n; // LV
+        }
+        
+        return 0;
+>>>>>>> b63e63f28c870e89573b839986429f7147ca3bde
+    }
+});
