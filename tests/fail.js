@@ -16,7 +16,7 @@ tests.push({
             var x = b[i];
             x++;
             for (var j = 0; j < 10; j++) {
-                a[x] += 1
+                a[x] += 1;
             }
         }
         return a;
@@ -128,3 +128,40 @@ tests.push({
         return args;
     }   
 });
+
+tests.push({
+    name: 'Mixed Op Reduction',
+    args: [],
+    fn: function fn (args) {
+        var w = 5;
+        var y = 60;
+        var z = 15;
+        for (var i = 0; i < 667; i++) {
+            w = y * 5;
+            z = 20 / y;
+            y = z + w;
+        }
+        return z;
+    }
+});
+
+tests.push({
+    name: 'Mixed Reduction',
+    args: [],
+    fn: function fn (args) {
+        var w = 5;
+        var y = 60;
+        var z = 15;
+        var a = 20;
+        var b = 67;
+        for (var i = 0; i < 157; i++) {
+            w = z + y + 2 + i;
+            z = y - 20;
+            y = z + 15;
+            a = b + 20 / z;
+            b = a - 15;
+        }
+        return y + z - a;
+    }
+});
+

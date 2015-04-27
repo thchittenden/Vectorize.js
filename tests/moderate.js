@@ -120,6 +120,13 @@ tests.push({
     }
 });
 
+/*
+tests.push({
+    name: "Trivial SCC's",
+    args: [],
+    fn: function 
+}); */
+
 tests.push({
     name: 'Multiple Reductions',
     args : [],
@@ -128,7 +135,7 @@ tests.push({
         var z = 10;
         var a = 15;
         var b = 20;
-        for (var i = 0; i < args.length; i++) {
+        for (var i = 0; i < 100; i++) {
             w = z + 2;
             z = w + 5;
             a = b / 20;

@@ -443,11 +443,14 @@ dependence = (function() {
             return scc.length === 1 && (!g.edges[scc[0]][scc[0]]);
         };
 
+        var getSCC = function (v) {
+            return _.find(sccs, _.partial(_.contains, _, v));
+        };
         // Returns true if the edges of a trivial node are 'safe'.
         var hasSafeEdges = function (v) {
             // If the edge doesn't exist or it's to a trivial node then it's safe.
             return _.all(_.map(g.edges[v], function (isEdge, n) {
-                return (!isEdge) || isTrivial(n);
+                return (!isEdge) || isTrivial(getSCC(n));
             }));
         };
         var selfContained = function (scc) {
@@ -465,12 +468,17 @@ dependence = (function() {
             }
 
             // Make sure trivial nodes are 'safe'.
-            if (isTrivial(sccs[i][0]) && !hasSafeEdges(sccs[i][0])) {
-                return null;
+            if (isTrivial(sccs[i])) {
+                if (!hasSafeEdges(sccs[i][0])) {
+                    console.log('Trivial node has unsafe edges');
+                    return null;
+                }
+                continue;
             } 
 
             // Make sure that SCC's only have self contained edges.
             if (!selfContained(sccs[i])) { 
+                console.log('Reduction is not self contained.');
                 return null;
             }
         }
@@ -490,6 +498,7 @@ dependence = (function() {
                 // reduction variables, then the loop is not safe.
                 var exprOp = getReductionOp(sccs[i], nodeToRhs(sccs[i][j]));
                 if (exprOp.safe === false) {
+                    console.log('Reduction expression is unsafe');
                     return null;
                 }
                 
@@ -498,6 +507,7 @@ dependence = (function() {
                 // If this node uses a different operation then the other nodes
                 // then the reduction is not safe.
                 } else if (opClass !== getOpClass(exprOp.op)) {
+                    console.log('Reduction mixes operations');
                     return null;
                 }
                 reductions.push({ node: g.nodes[sccs[i][j]], op : exprOp.op });

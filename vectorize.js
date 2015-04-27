@@ -7,10 +7,10 @@ vectorize = (function() {
     var _ = require('underscore');
 
     function unsupported(node) {
-        throw ("unsupported operation: " + escodegen.generate(node))
+        throw ("unsupported operation: " + escodegen.generate(node));
     }
     function assert(cond) {
-        if (!cond) throw "assertion failed"
+        if (!cond) throw "assertion failed";
     }
     function trace(str) {
         console.log(str);
@@ -20,7 +20,7 @@ vectorize = (function() {
     var vectorWidth = 4;
     var vectorAccessors = ['x', 'y', 'z', 'w'];
     var vectorConstructor = util.property(util.ident('SIMD'), 'float32x4'); 
-    var vectorOp = {}
+    var vectorOp = {};
     vectorOp['+'] = util.property(vectorConstructor, 'add');
     vectorOp['-'] = util.property(vectorConstructor, 'sub');
     vectorOp['*'] = util.property(vectorConstructor, 'mul');
@@ -58,7 +58,7 @@ vectorize = (function() {
         return id;
     }
     function mktemp(node) {
-        var id = nodekey(node)
+        var id = nodekey(node);
         return 'temp' + tempIdx++ + '_' + id;
     }
 
@@ -494,7 +494,7 @@ vectorize = (function() {
             GraphIndexExpression: unsupported,
             
             // This should have been removed.
-            UpdateExpression: function () { throw "update expression remains!" },
+            UpdateExpression: function () { throw "update expression remains!";},
         });
     }
 
@@ -615,7 +615,7 @@ vectorize = (function() {
                     unsupported(node);
                 }
 
-                for (term in factors.factors) {
+                for (var term in factors.factors) {
                     if (term !== iv.name) {
                         // This means there was a non IV term in the index.
                         // Currently we don't support this because the term may
@@ -731,7 +731,7 @@ vectorize = (function() {
             GraphIndexExpression: unsupported,
 
             // This should have been removed.
-            UpdateExpression: function () { throw "update expression remains!" },
+            UpdateExpression: function () { throw "update expression remains!";},
 
         });
     
@@ -921,6 +921,11 @@ vectorize = (function() {
             ForStatement: function (node) {
                 var vectorloop = util.clone(node);
                 var scalarloop = util.clone(node);
+
+                var reds = dependence.mkReductions(vectorloop, iv);
+                if (reds === null) {
+                    throw 'Unsupported Reductions!';
+                }
                 
                 // Canonicalize assignments to make things easier.
                 canonicalizeAssignments(vectorloop.body);
@@ -934,10 +939,10 @@ vectorize = (function() {
                 
                 // Get the reduction operations in the loop. This should be 
                 // auto-detected in the future.
-                var valid = true; // dependence.mkReductions(vectorloop, iv);
+                var valid = true; 
                 if (valid === null) {
                     // Safety checks determined we can't vectorize. Bail out.
-                    throw "dependency check failure"
+                    throw "dependency check failure";
                 }
                 //var reductions = valid.reductions;
                 //var liveouts = valid.liveouts;
