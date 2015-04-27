@@ -484,7 +484,7 @@ dependence = (function() {
         }
         
         
-        var reductions = [];
+        var reductions = {};
         for (var i = 0; i < sccs.length; i++) { 
             // If the scc is an array then it's not a reduction so we don't
             // care.
@@ -510,7 +510,8 @@ dependence = (function() {
                     console.log('Reduction mixes operations');
                     return null;
                 }
-                reductions.push({ node: g.nodes[sccs[i][j]], op : exprOp.op });
+                var name = nodeToLhs(sccs[i][j]).name;
+                reductions[name] = getOpClass(exprOp.op);
             }
         }
 
