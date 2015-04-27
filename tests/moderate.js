@@ -118,4 +118,22 @@ tests.push({
         }
         return args;
     }
-})
+});
+
+tests.push({
+    name: 'Multiple Reductions',
+    args : [],
+    fn: function fn (args) {
+        var w = 5;
+        var z = 10;
+        var a = 15;
+        var b = 20;
+        for (var i = 0; i < args.length; i++) {
+            w = z + 2;
+            z = w + 5;
+            a = b / 20;
+            b = a * 15;
+        }
+        return w + b;
+    }
+});

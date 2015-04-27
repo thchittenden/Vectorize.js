@@ -15,7 +15,7 @@ dependence = (function() {
             }
         }
 
-        return { Scale: factors.factors[iv], Offset: factors.constant }
+        return { Scale: factors.factors[iv], Offset: factors.constant };
     }
 
     function mkStepFn (ast, iv) {
@@ -42,7 +42,7 @@ dependence = (function() {
             });
 
             return util.canonExpression(stepped);
-        }
+        };
         return step;
     }
 
@@ -59,7 +59,7 @@ dependence = (function() {
                     }
                 }
             });
-        }
+        };
         idx = forceConstRight(idx);
         switch (idx.type) {
             case 'Literal':
@@ -114,6 +114,7 @@ dependence = (function() {
                         Literal: literal
                     } : null;
                 }
+                break;
             default:
                 break;
         }
@@ -134,7 +135,6 @@ dependence = (function() {
 
         // Both are array access
         var aInfo = getIVFactors(a.property);
-        console.log(aInfo);
         var bInfo = getIVFactors(b.property);
 
         if (aInfo === null || bInfo === null) {
@@ -217,16 +217,16 @@ dependence = (function() {
             if (util.astEq(e1.object, e2.object)) {
                 var dep = lamport(e1.property, e2.property);
                 // Can't handle this case.
-                if (dep == null) {
+                if (dep === null) {
                     return null;
                 }
                 return dep.IsDep && 
-                    (dep.Dist != 0) &&
+                    (dep.Dist !== 0) &&
                     (Math.abs(dep.Dist) < util.VEC_SIZE);
             }
 
             return false;
-        }
+        };
 
         // Checks if assgn1 uses the variables defined by assgn0.
         var hasDep = _.any(_.map(getUses(assgn1.right), function(v) { 
@@ -251,7 +251,7 @@ dependence = (function() {
                 }
             });
             return is_valid;
-        }
+        };
 
         var allClear = true;
         esrecurse.visit(loop.body, {
@@ -272,48 +272,246 @@ dependence = (function() {
         return allClear;
     }
 
+    // Implementation of Tarjan's SCC algorithm 
+    function findSCCs(N, E) {
+        var index = 0; 
+        var S = [];
+        var sccs = [];
+
+        var nodeInfo = [];
+
+        for (var i = 0; i < N.length; i++) {
+            nodeInfo.push({
+                index : null,
+                lowlink : null,
+                onStack : false
+            });
+        }
+
+        var strongconnect = function(v) {
+            nodeInfo[v].index = index;
+            nodeInfo[v].lowlink = index;
+            index++;
+            S.push(v);
+            nodeInfo[v].onStack = true;
+
+            for (var w = 0; w < N.length; w++) {
+                if (!E[v][w]) {
+                    continue;
+                }
+
+                // Haven't visited w yet.
+                var wlink, vlink;
+                if (nodeInfo[w].index === null) {
+                    strongconnect(w);
+                    wlink = nodeInfo[w].lowlink;
+                    vlink = nodeInfo[v].lowlink;
+                    nodeInfo[v].lowlink = Math.min(wlink, vlink);
+                // w is in the current SCC
+                } else if (nodeInfo[w].onStack) {
+                    wlink = nodeInfo[w].lowlink;
+                    vlink = nodeInfo[v].lowlink;
+                    nodeInfo[v].lowlink = Math.min(wlink, vlink);
+                }
+            }
+
+            if (nodeInfo[v].lowlink === nodeInfo[v].index) {
+                var scc = [];
+                while (S.length > 0) {
+                    w = S.pop();
+                    scc.push(w);
+                    nodeInfo[w].onStack = false;
+                    if (w === v) {
+                        break;
+                    }
+                }
+                sccs.push(scc);
+            }
+        };
+
+        for (var v = 0; v < N.length; v++) {
+            if (nodeInfo[v].index === null) {
+                strongconnect(v);
+            }
+        }
+        return sccs;
+    }
+
+    function mkDepGr (loop) {
+        var nodes = getAssgns(loop); 
+        var edges = [];
+        for (var i = 0; i < nodes.length; i++) {
+            edges.push(_.map(nodes, function (node, nodeIdx) {
+                return determineDependence(nodes[i], node);
+            }));
+        }
+        // Remove any edges that are not loop carried between arrays and
+        // scalars.
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i].left.type !== 'MemberExpression') {
+                continue;
+            }
+
+            for (var j = 0; j < i; j++) {
+                if (nodes[j].left.type === 'Identifier') {
+                    edges[i][j] = false;
+                }
+            }
+        }
+        return {
+            nodes: nodes,
+            edges: edges
+        };
+    }
+
     dependence.mkReductions = function (loop, iv) {
         if (!basicFilters(loop)) {
             console.log('failed filters');
             return null; 
         }
-        var assgns = getAssgns(loop);
-        for (var i = 0; i < assgns.length; i++) {
-            for (var j = 0; j < assgns.length; j++) {
-                // If there is a loop carried dependence for a scalar then we
-                // can't vector it.
-                if (assgns[i].left.type == 'Identifier' && j < i) {
-                    var dep = determineDependence(assgns[i], assgns[j]);
-                    if (dep === true || dep === null) {
-                        console.log('loop carried scalar dep');
-                        return null;
-                    }
-                }
-                // If there is any dependence for an array then we can't do
-                // anything.
-                if (assgns[i].left.type == 'MemberExpression') {
-                    var dep = determineDependence(assgns[i], assgns[j]);
-                    if (dep === true || dep === null) {
-                        console.log('Array carried dep');
-                        return null;
-                    }
-                }
+        var g = mkDepGr(loop);
+        var sccs = findSCCs(g.nodes, g.edges); 
+        console.log(g);
+        console.log(sccs);
+
+        // Make sure that arrays have no dependences.
+        for (var i = 0; i < g.nodes.length; i++) {
+            if (g.nodes[i].left.type === 'MemberExpression' && _.any(g.edges[i])) {
+                return null;
             }
         }
 
-        // Look for reductions.
-        var reductions = _.filter(assgns, function (assgn) { 
-            var eq = _.curry(util.astEq)(assgn.left);
-            var uses = getUses(assgn.right);
-            return assgn.left.type == 'Identifier' && _.any(uses, eq);
-        });
+        var opClasses = [['+', '-'], ['/', '*']];
+        var nodeToLhs = function (n) { return g.nodes[n].left; };
+        var nodeToRhs = function (n) { return g.nodes[n].right; };
+        var getOpClass = function (op) { 
+            var cls =  _.find(opClasses, _.partial(_.contains, _, op));
+            return cls === undefined ? null : cls;
+        };
+
+        // Make sure that everything in a SCC is always used with the same
+        // operator.
+        var getReductionOp = function (scc, expr) {
+            // Whether an identifer is the lhs of a node in an scc.
+            var isSCCNode = function (node) {
+                var eq = function (v) { return util.astEq(node, nodeToLhs(v)); };
+                return _.any(scc, eq);
+            };
+
+            // Whether a given expression eventually has a SCC node for a leaf.
+            var reachesSCC = function (n) {
+                var reaches = false; 
+                esrecurse.visit(n, {
+                    Identifier: function (ident) { 
+                        if (isSCCNode(ident)) {
+                            reaches = true;
+                        }
+                    }
+                });
+                return reaches;
+            };
+
+            var op = null;
+            var safe = true;
+            esrecurse.visit(expr, {
+                // TODO: Make sure no unary operators use SCCNodes.
+                BinaryExpression: function (bin) {
+                    var reachSCC = reachesSCC(bin.left) || reachesSCC(bin.right);
+                    if (reachSCC && op === null) {
+                        op = bin.operator;
+                    }
+
+                    // Uses a bin op we don't support.
+                    if (reachSCC && getOpClass(bin.operator) === null) {
+                        safe = false; 
+                        return;
+                    }
+
+                    if (reachSCC && (getOpClass(bin.operator) !== getOpClass(op))) {
+                        safe = false;
+                        return;
+                    }
+                }
+            });
+
+            return { safe : safe, op : op };
+        };
+
+        // For now we only accept reductions which are self contained. Meaning
+        // non trivial SCC's can only have edges within the SCC.
+        var isTrivial = function (scc) {
+            return scc.length === 1 && (!g.edges[scc[0]][scc[0]]);
+        };
+
+        // Returns true if the edges of a trivial node are 'safe'.
+        var hasSafeEdges = function (v) {
+            // If the edge doesn't exist or it's to a trivial node then it's safe.
+            return _.all(_.map(g.edges[v], function (isEdge, n) {
+                return (!isEdge) || isTrivial(n);
+            }));
+        };
+        var selfContained = function (scc) {
+            return _.all(scc, function (v) {
+                return _.all(_.map(g.edges[v], function (isEdge, n) {
+                    return (!isEdge) || _.contains(scc, n);
+                }));
+            });
+        };
+
+        for (var i = 0; i < sccs.length; i++) { 
+            // Arrays are already verified.
+            if (nodeToLhs(sccs[i][0]).type === 'MemberExpression') {
+                continue;
+            }
+
+            // Make sure trivial nodes are 'safe'.
+            if (isTrivial(sccs[i][0]) && !hasSafeEdges(sccs[i][0])) {
+                return null;
+            } 
+
+            // Make sure that SCC's only have self contained edges.
+            if (!selfContained(sccs[i])) { 
+                return null;
+            }
+        }
+        
+        
+        var reductions = [];
+        for (var i = 0; i < sccs.length; i++) { 
+            // If the scc is an array then it's not a reduction so we don't
+            // care.
+            if (nodeToLhs(sccs[i][0]).type === 'MemberExpression') {
+                continue;
+            }
+
+            var opClass = null;
+            for (var j = 0; j < sccs[i].length; j++) {
+                // If the expression by itself uses mixed operations on
+                // reduction variables, then the loop is not safe.
+                var exprOp = getReductionOp(sccs[i], nodeToRhs(sccs[i][j]));
+                if (exprOp.safe === false) {
+                    return null;
+                }
+                
+                if (opClass === null) {         
+                    opClass = getOpClass(exprOp.op);
+                // If this node uses a different operation then the other nodes
+                // then the reduction is not safe.
+                } else if (opClass !== getOpClass(exprOp.op)) {
+                    return null;
+                }
+                reductions.push({ node: g.nodes[sccs[i][j]], op : exprOp.op });
+            }
+        }
+
         console.log(reductions);
+
         return reductions;
-    }
+    };
 
     dependence.detectIV = function (loop) {
         // This should be more robust...
-        var name = undefined;
+        var name;
         esrecurse.visit(loop.update, {
             UpdateExpression: function (node) {
                 name = node.argument.name;
@@ -330,7 +528,7 @@ dependence = (function() {
             name: name,
             step: mkStepFn(loop, name)
         };
-    }
+    };
 
     return dependence;
-})()
+})();
