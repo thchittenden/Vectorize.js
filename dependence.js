@@ -233,7 +233,7 @@ dependence = (function() {
         var edges = [];
         for (var i = 0; i < nodes.length; i++) {
             edges.push(_.map(nodes, function (node, nodeIdx) {
-                return determineDependence(nodes[i], node, iv);
+                return determineDependence(node, nodes[i], iv);
             }));
         }
         // Remove any edges that are not loop carried between arrays and
