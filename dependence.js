@@ -488,9 +488,12 @@ dependence = (function() {
         for (var i = 0; i < sccs.length; i++) { 
             // If the scc is an array then it's not a reduction so we don't
             // care.
-            if (nodeToLhs(sccs[i][0]).type === 'MemberExpression') {
+            if (nodeToLhs(sccs[i][0]).type === 'MemberExpression' ||
+                isTrivial(sccs[i])) {
                 continue;
             }
+
+
 
             var opClass = null;
             for (var j = 0; j < sccs[i].length; j++) {
