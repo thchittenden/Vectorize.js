@@ -168,7 +168,7 @@ vectorize = (function() {
         // anywhere in the loop. If a variable is not in inv_vars and in 
         // defd_vars then it is not invariant.
         var defd_vars = {};
-        defd_vars[iv.name] = true;
+        defd_vars[nodekey(util.ident(iv.name))] = true;
 
         // inv_vars is a set containing the variables that are DEFINITELY
         // invariant at the current point in the loop. This means they were
@@ -1002,6 +1002,7 @@ vectorize = (function() {
                 // Perform some pre-processing to make things easier.
                 canonicalizeAssignments(vectorloop.body);
                 markLoopInvariant(vectorloop.body, iv);
+                logInvariant(vectorloop.body);
 
                 // Perform dependency analysis and find the reduction variables.
                 var reductions = dependence.mkReductions(vectorloop, iv);
@@ -1021,7 +1022,6 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 var liveouts = vectorizeStatement(vectorloop.body, iv, reductions);
-                console.log(liveouts);
 
                 // Perform the reductions at the end of the loop.
                 var retires = performReductions(reductions, liveouts);
