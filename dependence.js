@@ -46,82 +46,7 @@ dependence = (function() {
         return step;
     }
 
-    function linearEqElems(idx) {
-        // Forces Literal constants to the right of binary exressions.
-        var forceConstRight = function(expr) {
-            return estraverse.replace(util.clone(expr), {
-                leave: function(node) {
-                    var commOps = ['+', '*'];
-                    if (node.type == 'BinaryExpression' &&
-                        (commOps.indexOf(node.operator) !== -1) &&
-                        node.left.type ==  'Literal') {
-                        return util.binop(node.right, node.op, node.left);
-                    }
-                }
-            });
-        };
-        idx = forceConstRight(idx);
-        switch (idx.type) {
-            case 'Literal':
-                // a[c] case
-                return util.isNumeric(idx.value) ? {
-                    Type: 'Constant',
-                    Value: idx.value
-                } : null;
-            case 'Identifier':
-                // a[i] case
-                return {
-                    Type: 'Equation',
-                    Scale: 1,
-                    Offset: 0,
-                    Literal: idx.name
-                };
-            case 'BinaryExpression':
-                // a[i * 5]
-                if (idx.operator === '*' && idx.right.type === 'Literal') {
-                    return util.isNumeric(idx.right.value) ? {
-                        Type: 'Equation',
-                        Scale: idx.right.value,
-                        Offset: 0,
-                        Literal: idx.left.name
-                    } : null;
-                }
-
-                // a[i + 5]
-                if (idx.operator === '+' &&
-                    idx.left.type === 'Identifier' &&
-                    idx.right.type === 'Literal') {
-                    return util.isNumeric(idx.right.value) ? {
-                        Type: 'Equation',
-                        Scale: 1,
-                        Offset: idx.right.value,
-                        Literal: idx.left.name
-                    } : null;
-                }
-
-                // a[ (i * c) + b ]
-                if (idx.operator === '+' && idx.right.type === 'Literal' &&
-                    idx.left.type === 'BinaryExpression' &&
-                    idx.left.left.type === 'Identifier' &&
-                    idx.left.right.type === 'Literal') {
-                    var scale = idx.left.right.value;
-                    var offset = idx.right.value;
-                    var literal = idx.left.left.name;
-                    return util.isNumeric(scale) && util.isNumeric(offset) ? {
-                        Type: 'Equation',
-                        Scale: scale,
-                        Offset: offset,
-                        Literal: literal
-                    } : null;
-                }
-                break;
-            default:
-                break;
-        }
-        return null;
-    }
-
-    function lamport(a, b) {
+    function lamport(a, b, iv) {
         if (a.type === 'Identifier' && b.type === 'Identifier' && a.name === b.name) {
             return {
                 IsDep: true,
@@ -134,10 +59,11 @@ dependence = (function() {
         }
 
         // Both are array access
-        var aInfo = getIVFactors(a.property);
-        var bInfo = getIVFactors(b.property);
+        var aInfo = getIVFactors(a.property, iv);
+        var bInfo = getIVFactors(b.property, iv);
 
         if (aInfo === null || bInfo === null) {
+            // The indexes were not of the form a*i+b
             return null;
         }
 
@@ -204,7 +130,7 @@ dependence = (function() {
     }
 
     // Whether assgn1 uses any variables which assgn0 defines.
-    function determineDependence (assgn0, assgn1) {
+    function determineDependence (assgn0, assgn1, iv) {
         var checkDep = function(e1, e2) {
             if (e1.type !== e2.type) {
                 return false;
@@ -215,8 +141,9 @@ dependence = (function() {
             }
 
             if (util.astEq(e1.object, e2.object)) {
-                var dep = lamport(e1.property, e2.property);
-                // Can't handle this case.
+                var dep = lamport(e1.property, e2.property, iv);
+                // Lamport's test determines the indexes may clash so this
+                // is unsafe.
                 if (dep === null) {
                     return null;
                 }
@@ -234,42 +161,6 @@ dependence = (function() {
         }));
 
         return hasDep;
-    }
-
-    // Filters out thing's we can't handle right now. I.e two dimm arrays and
-    // objects.
-    function basicFilters (loop, iv) {
-        var valid_idx = function (idx) {
-            var valid_exprs = ['BinaryExpression', 'Literal', 'Identifier'];
-            var is_valid = true;
-            estraverse.traverse(idx, {
-                enter: function (node) {
-                    if (!_.contains(valid_exprs, node.type)) {
-                        console.log("FOUND " + node.type);
-                        is_valid = false;
-                    }
-                }
-            });
-            return is_valid;
-        };
-
-        var allClear = true;
-        esrecurse.visit(loop.body, {
-            MemberExpression: function (node) {
-                if (node.object.type !== 'Identifier') {
-                    allClear = false;
-                }
-
-                if (!valid_idx(node.property)) {
-                    allClear = false;
-                }
-
-                if (node.computed === false) {
-                    allClear = false;
-                }
-            }
-        });
-        return allClear;
     }
 
     // Implementation of Tarjan's SCC algorithm 
@@ -337,12 +228,12 @@ dependence = (function() {
         return sccs;
     }
 
-    function mkDepGr (loop) {
+    function mkDepGr (loop, iv) {
         var nodes = getAssgns(loop); 
         var edges = [];
         for (var i = 0; i < nodes.length; i++) {
             edges.push(_.map(nodes, function (node, nodeIdx) {
-                return determineDependence(nodes[i], node);
+                return determineDependence(nodes[i], node, iv);
             }));
         }
         // Remove any edges that are not loop carried between arrays and
@@ -365,22 +256,11 @@ dependence = (function() {
     }
 
     dependence.mkReductions = function (loop, iv) {
-        if (!basicFilters(loop)) {
-            console.log('failed filters');
-            //return null; 
-        }
-        var g = mkDepGr(loop);
+        var g = mkDepGr(loop, iv);
         var sccs = findSCCs(g.nodes, g.edges); 
         console.log(g);
         console.log(sccs);
-
-        // Make sure that arrays have no dependences.
-        for (var i = 0; i < g.nodes.length; i++) {
-            if (g.nodes[i].left.type === 'MemberExpression' && _.any(g.edges[i])) {
-                return null;
-            }
-        }
-
+        
         var opClasses = [['+', '-'], ['/', '*']];
         var nodeToLhs = function (n) { return g.nodes[n].left; };
         var nodeToRhs = function (n) { return g.nodes[n].right; };
@@ -388,6 +268,16 @@ dependence = (function() {
             var cls =  _.find(opClasses, _.partial(_.contains, _, op));
             return cls === undefined ? null : cls;
         };
+
+        // Make sure that arrays have no dependences.
+        for (var i = 0; i < g.nodes.length; i++) {
+            if (g.nodes[i].left.type === 'MemberExpression' && _.any(g.edges[i])) {
+                var left = escodegen.generate(nodeToLhs(i));
+                var ridx = _.find(g.edges[i], _.identity);
+                var right = escodegen.generate(nodeToLhs(ridx));
+                throw ("invalid dependence between " + left + " and " + right);
+            }
+        }
 
         // Make sure that everything in a SCC is always used with the same
         // operator.
@@ -437,6 +327,10 @@ dependence = (function() {
             return { safe : safe, op : op };
         };
 
+        // Determines if a node is 'trivial'. We define trivial to mean that 
+        // the node is not part of a cycle and does not contain a self edge. In
+        // practice this means the node is an assignment where the RHS does not
+        // depend on any reduction variables.
         // For now we only accept reductions which are self contained. Meaning
         // non trivial SCC's can only have edges within the SCC.
         var isTrivial = function (scc) {
@@ -446,13 +340,15 @@ dependence = (function() {
         var getSCC = function (v) {
             return _.find(sccs, _.partial(_.contains, _, v));
         };
-        // Returns true if the edges of a trivial node are 'safe'.
+
+        // Determines if all edges on a trivial node are 'safe'. We define safe
+        // for trivial nodes to mean they only have edges to other trivial nodes.
         var hasSafeEdges = function (v) {
-            // If the edge doesn't exist or it's to a trivial node then it's safe.
             return _.all(_.map(g.edges[v], function (isEdge, n) {
                 return (!isEdge) || isTrivial(getSCC(n));
             }));
         };
+
         var selfContained = function (scc) {
             return _.all(scc, function (v) {
                 return _.all(_.map(g.edges[v], function (isEdge, n) {
@@ -470,16 +366,14 @@ dependence = (function() {
             // Make sure trivial nodes are 'safe'.
             if (isTrivial(sccs[i])) {
                 if (!hasSafeEdges(sccs[i][0])) {
-                    console.log('Trivial node has unsafe edges');
-                    return null;
+                    throw 'trivial node has unsafe edges';
                 }
                 continue;
             } 
 
             // Make sure that SCC's only have self contained edges.
             if (!selfContained(sccs[i])) { 
-                console.log('Reduction is not self contained.');
-                return null;
+                throw 'reduction is not self contained.';
             }
         }
         
@@ -499,8 +393,7 @@ dependence = (function() {
                 // reduction variables, then the loop is not safe.
                 var exprOp = getReductionOp(sccs[i], nodeToRhs(sccs[i][j]));
                 if (exprOp.safe === false) {
-                    console.log('Reduction expression is unsafe');
-                    return null;
+                    throw 'reduction operator is unsafe';
                 }
                 
                 if (opClass === null) {         
@@ -508,8 +401,7 @@ dependence = (function() {
                 // If this node uses a different operation then the other nodes
                 // then the reduction is not safe.
                 } else if (exprOp.op !== null && opClass !== getOpClass(exprOp.op)) {
-                    console.log('Reduction mixes operations');
-                    return null;
+                    throw 'reduction mixes operations';
                 }
             }
 
@@ -520,7 +412,6 @@ dependence = (function() {
         }
 
         console.log(reductions);
-
         return reductions;
     };
 
