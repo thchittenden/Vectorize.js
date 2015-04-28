@@ -475,7 +475,7 @@ vectorize = (function() {
 
                     // If this assignment is a vector, mark the LHS as a vector.
                     if (node.isvec) {
-                        vectorVars[nodekey(node.left)] = true;
+                        vectorVars[nodekey(node.left)] = util.clone(node.left);
                     }
                 } else {
                     // This is not a simple variable. Make sure it's of the form:
@@ -773,7 +773,7 @@ vectorize = (function() {
         return true;
     }
     
-    function vectorizeStatement(stmt, iv) {
+    function vectorizeStatement(stmt, iv, reductions) {
         
         // The current mapping of array accesses to their bound temps. The keys
         // are canonicalized versions of the index polynomials e.g. 
@@ -786,6 +786,11 @@ vectorize = (function() {
         // The current set of variables that are known vectors. These are 
         // always just strings, not AST elements.
         var vectorVars = {};
+        for (var elem in reductions) {
+            // Currently only ident reduction variables are supported but we
+            // should allow any SimpleVariable.
+            vectorVars[nodekey(util.ident(elem))] = util.clone(util.ident(elem));
+        }
 
         // A list of statements that will populate temporaries needed in the 
         // statement.
@@ -808,7 +813,7 @@ vectorize = (function() {
                 if (node.id.type !== "Identifier") unsupported(node);
                 if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
                     trace("    Vector: " + node.id.name);
-                    vectorVars[nodekey(node.id)] = true;
+                    vectorVars[nodekey(node.id)] = util.clone(node.id);
                 } else {
                     trace("    Not a vector.");
                 }   
@@ -899,6 +904,24 @@ vectorize = (function() {
         loop.init = null;
     }
 
+    // Resolves a reduction operator to the operator needed to combine the
+    // lanes of the reduction.
+    function resolveOp(ops) {
+        
+        function canonop(op) {
+            if (op === '-') return '+';
+            if (op === '/') return '*';
+            return op;
+        }
+        var op = canonop(ops[0]);
+        for (var i = 1; i < ops.length; i++) {
+            if (op !== canonop(ops[i])) {
+                throw ("invalid reduction operators: " + ops[0] + " and " + ops[i]);
+            }
+        }
+        return op;
+    }
+
     // At the beginning of the loop we need to initialize reduction variables
     // so that they're vectors:
     //      x = v(x, 0, 0, 0) for '+'
@@ -906,8 +929,9 @@ vectorize = (function() {
     function initReductions(reductions) {
         var inits = [];
         for (var variable in reductions) {
-            var id = util.ident(variable)
-            var identity = util.literal(reductions[variable] === '+' ? 0 : 1);
+            var id = util.ident(variable);
+            var op = resolveOp(reductions[variable]);
+            var identity = util.literal(op === '+' ? 0 : 1);
             inits.push(util.assignment(id, util.call(vectorConstructor, [id, identity, identity, identity])));
         }
         return util.block(inits, false);
@@ -928,7 +952,7 @@ vectorize = (function() {
         // For reductions we just perform the reduction across the four lanes
         // of the vector.
         for (var name in reductions) {
-            var op = reductions[name];
+            var op = resolveOp(reductions[name]);
             var red1 = util.binop(util.property(util.ident(name), 'x'), op, util.property(util.ident(name), 'y'));
             var red2 = util.binop(util.property(util.ident(name), 'z'), op, util.property(util.ident(name), 'w'));
             var red3 = util.binop(red1, op, red2);
@@ -936,9 +960,10 @@ vectorize = (function() {
         }
 
         // For liveouts we just use the last lane of the vector.
-        for (var i = 0; i < liveouts.length; i++) {
-            var name = liveouts[i];
-            stmts.push(util.assignment(util.ident(name), util.property(util.ident(name), 'w')));
+        for (var name in liveouts) {
+            var node = liveouts[name];
+            if (node.type === 'Identifier' && node.name in reductions) continue;
+            stmts.push(util.assignment(node, util.property(node, 'w')));
         }
 
         return util.block(stmts, false); 
@@ -996,7 +1021,7 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 var liveouts = vectorizeStatement(vectorloop.body, iv, reductions);
-                cleanupBlocks(vectorloop.body);
+                console.log(liveouts);
 
                 // Perform the reductions at the end of the loop.
                 var retires = performReductions(reductions, liveouts);
@@ -1004,6 +1029,7 @@ vectorize = (function() {
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
                 util.set(node, util.block([inits, vectorloop, retires, scalarloop], true));
+                cleanupBlocks(node);
             }
         });
 

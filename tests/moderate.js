@@ -164,7 +164,7 @@ tests.push({
     args: [0, 1, 2, 3, 4, 5, 6, 7],
     fn: function fn (args) {
         var x, y, z = 0, sum = 0;
-        for (var j = 0; j < args.length; j++) {
+        for (var i = 0; i < args.length; i++) {
             sum = z + args[i];
             z = sum + y + z + args[i];
             y = args[i] + x;
