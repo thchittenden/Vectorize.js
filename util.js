@@ -1,7 +1,19 @@
 util = (function(){
     var esrecurse = require('esrecurse');
+    var escodegen = require('escodegen');
     var util = {};
     util.VEC_SIZE = 4;
+
+    util.unsupported = function (node) {
+        throw ("unsupported operation: " + escodegen.generate(node));
+    }
+
+    util.assert = function (cond) {
+        if (!cond) throw "assertion failed";
+    }
+    util.trace = function (str) {
+        console.log(str);
+    }
 
     // Utility functions for creating AST elements.
     util.ident = function (name) {
@@ -324,6 +336,39 @@ util = (function(){
             }
         });
         return expr;
+    }
+    
+    util.getIdent = function (expr) {
+        // Prepend the type to prevent collisions from malicious users.
+        var id = expr.type + '_' + escodegen.generate(expr);
+        return id.replace(/[-\+\*\/\.\[\]]/g, '_');
+    }
+
+
+    util.isStatic = function (expr) {
+        esrecurse.visit(expr, {
+            Identifier: function (node) {
+                node.static = true;
+            },
+            Literal: function (node) {
+                node.static = true;
+            },
+            MemberExpression: function (node) {
+                if (!node.computed) {
+                    this.visit(node.object);
+                    this.visit(node.property);
+                    node.static = node.object.static && node.property.static;
+                } else {
+                    node.static = false;
+                }
+            },
+        });
+        return expr.static;
+    }
+
+    util.getStaticIdent = function (expr) {
+        util.assert(util.isStatic(expr));
+        return util.getIdent(expr);
     }
 
     return util;
