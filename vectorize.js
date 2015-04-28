@@ -6,15 +6,10 @@ vectorize = (function() {
     var esrecurse = require('esrecurse');
     var _ = require('underscore');
 
-    function unsupported(node) {
-        throw ("unsupported operation: " + escodegen.generate(node));
-    }
-    function assert(cond) {
-        if (!cond) throw "assertion failed";
-    }
-    function trace(str) {
-        console.log(str);
-    }
+    // Extract some util properties to make things easier.
+    var assert = util.assert;
+    var unsupported = util.unsupported;
+    var trace = util.trace;
    
     // SIMD properties.
     var vectorWidth = 4;
@@ -37,17 +32,12 @@ vectorize = (function() {
         return util.call(util.property(vectorConstructor, 'splat'), [val]);
     }
 
-    function nodekey(node) {
-        var id = node.type + '_' + escodegen.generate(node);
-        return id.replace(/[-\+\*\/\.\[\]]/g, '_');
-    }
-
     // Creates a unique key for an array and its linear index. Given something
     // like (obj.arr[a*i + b]) we'll get a string: 'obj_arr_a_i_b'.
     function vectorkey(arr, idxfactors) {
         
         // Create a string for the array.
-        var id = nodekey(arr) + '_';
+        var id = util.getStaticIdent(arr) + '_';
 
         // Append keys for the factors.
         for (var elem in idxfactors.factors) {
@@ -57,21 +47,10 @@ vectorize = (function() {
 
         return id;
     }
-    function mktemp(node) {
-        var id = nodekey(node);
-        return 'temp' + tempIdx++ + '_' + id;
-    }
 
-    // Converts a function to a function expression so we can manipulate 
-    // it like an object.
-    function makeFunctionExpression(ast) {
-        if (ast.body[0].type === "FunctionDeclaration") {
-            var fn = ast.body[0];
-            fn.type = "FunctionExpression";
-            fn.id = null;
-            ast.body[0] = { type: "ExpressionStatement", expression: fn };
-        } 
-        return ast;
+    function mktemp(node) {
+        var id = util.getStaticIdent(node);
+        return 'temp' + tempIdx++ + '_' + id;
     }
 
     // Steps the index inside an expression to a particular iteration.
@@ -168,7 +147,7 @@ vectorize = (function() {
         // anywhere in the loop. If a variable is not in inv_vars and in 
         // defd_vars then it is not invariant.
         var defd_vars = {};
-        defd_vars[nodekey(util.ident(iv.name))] = true;
+        defd_vars[util.getStaticIdent(util.ident(iv.name))] = true;
 
         // inv_vars is a set containing the variables that are DEFINITELY
         // invariant at the current point in the loop. This means they were
@@ -192,16 +171,17 @@ vectorize = (function() {
         }
 
         function mark_var (node, dep) {
+            var key = util.getIdent(node);
             if (mode === READ) {
-                mark (node, nodekey(node) in inv_vars || !(nodekey(node) in defd_vars));
+                mark (node, key in inv_vars || !(key in defd_vars));
             } else {
                 mark (node, mode === WRITE_INV);
-                defd_vars[nodekey(node)] = true;
-                defd_new[nodekey(node)] = true;
+                defd_vars[key] = true;
+                defd_new[key] = true;
                 if (mode === WRITE_INV) {
-                    inv_vars[nodekey(node)] = dep || true;
+                    inv_vars[key] = dep || true;
                 } else {
-                    delete inv_vars[nodekey(node)];
+                    delete inv_vars[key];
                 }
             }   
         }
@@ -245,13 +225,13 @@ vectorize = (function() {
                         if (node.object.invariant && node.property.invariant) {
                             // If the property is invariant, then we treat
                             // this node just like a variable.
-                            mark_var(node, nodekey(node.object));
+                            mark_var(node, util.getStaticIdent(node.object));
                         } else if (node.object.invariant) {
                             // The property isn't invariant. Invalidate
                             // everyone who is dependent on this array as we
                             // could be writing to any index.
                             for (elem in inv_vars) {
-                                if (inv_vars[elem] === nodekey(node.object)) {
+                                if (inv_vars[elem] === util.getIdent(node.object)) {
                                     delete inv_vars[elem];
                                 }
                             }
@@ -426,7 +406,7 @@ vectorize = (function() {
                 node.isidx = false;
             },
             Identifier: function (node) {
-                node.isvec = nodekey(node) in vectorVars;
+                node.isvec = util.getStaticIdent(node) in vectorVars;
                 node.isidx = node.name === iv.name;
                 assert(!(node.isvec && node.isidx));
             },
@@ -439,7 +419,7 @@ vectorize = (function() {
                 } else {
                     // An uncomputed access is a vector if a vector has been
                     // assigned to it.
-                    node.isvec = nodekey(node) in vectorVars;
+                    node.isvec = util.getStaticIdent(node) in vectorVars;
                     node.isidx = false;
                 }
             },
@@ -474,14 +454,14 @@ vectorize = (function() {
                 assert(node.left.type === 'Identifier' || node.left.type === 'MemberExpression');
                 this.visit(node.right);
 
-                if (isSimpleVariable(node.left)) {
+                if (util.isStatic(node.left)) {
                     // Remove this identifier from the list of vector variables. 
                     // This way, when we visit the LHS it will not be marked as a 
                     // vector if the OLD value of the LHS was a vector. e.g. in
                     //      var x = a[i];
                     //      x = 2;
                     // x should not be a vector in the second statement.
-                    delete vectorVars[nodekey(node.left)];
+                    delete vectorVars[util.getStaticIdent(node.left)];
 
                     // We don't need to visit the left node because it can't
                     // be a vector. LValues can only be vectors when they 
@@ -492,7 +472,7 @@ vectorize = (function() {
 
                     // If this assignment is a vector, mark the LHS as a vector.
                     if (node.isvec) {
-                        vectorVars[nodekey(node.left)] = util.clone(node.left);
+                        vectorVars[util.getStaticIdent(node.left)] = util.clone(node.left);
                     }
                 } else {
                     // This is not a simple variable. Make sure it's of the form:
@@ -630,111 +610,134 @@ vectorize = (function() {
             },
             MemberExpression: function (node) {
                 trace("Processing MEMBER: " + escodegen.generate(node));
-                if (mode === WRITE && node.computed && !node.isvec) {
-                    // Trying to use a computed node as a vector. We can't 
-                    // support this as we can't track what variables are vectors
-                    // and which aren't. Consider:
-                    //      x[0] = a[i];
-                    //      var y = x[f(0)];
-                    //      a[i] = y;
-                    // Is y a vector? Is it a constant?
-                    unsupported(node);
-                }
-
-                if (mode === READ && !node.isvec) {
-                    // This node is not a vector and we're reading. Splat it.
-                    util.set(node, splat(util.clone(node)));
-                    return;
-                }
-
-                if (node.property.isvec) {
-                    // We currently don't suppot indexing by a vector because
-                    // it's basically undecideable if it's safe. We SHOULD 
-                    // support a mode that allows the user to bypass safety 
-                    // checks in case they know better than us however!
-                    unsupported(node);
-                }
-
-                // Extract the factors on the polynomial that is the index.
-                var factors = util.getFactors(node.property);
-                if (factors === null) {
-                    // This means that the index was nonlinear. Currently this
-                    // is unsupported because it's very difficult to determine
-                    // if two accesses are the same (NP-Hard actually!). Again,
-                    // we should support a mode that allows the user to bypass
-                    // safety and let them take the responsibility for when 
-                    // abs(x) and (x * sign(x)) collide! 
-                    unsupported(node);
-                }
-
-                for (var term in factors.factors) {
-                    if (term !== iv.name) {
-                        // This means there was a non IV term in the index.
-                        // Currently we don't support this because the term may
-                        // be defined inside the loop and we would need to
-                        // place the vector read AFTER it was defined.
+                
+                if (util.isStatic(node)) {
+                    // We treat static nodes just like identifiers.
+                    if (mode === READ) {
+                        if (!node.isvec) {
+                            // This isn't a vector. Splat it.
+                            util.set(node, splat(util.clone(node)));
+                        }
+                    }
+                } else {
+                    // This is not a static node meaning there is at least one
+                    // computed index in it. We require this to be at the 
+                    // outermost level.
+                    if (!util.isStatic(node.object)) {
                         unsupported(node);
                     }
-                }
-                // At this point we know that the index is of the form:
-                //      a*iv + b
-                // which is the only mode we currently support :(
+
+                    if (mode === WRITE && !node.isvec) {
+                        // Trying to use a nonstatic node that is not a vector
+                        // (meaning its an array expression with an index not 
+                        // dependent on the IV). We don't support this because
+                        // we can't track what variables are vectors and which
+                        // aren't. Consider:
+                        //      x[0] = a[i];
+                        //      var y = x[f(0)];
+                        //      a[i] = y;
+                        // Is y a vector? Is it a constant?
+                        unsupported(node);
+                    }
+                    
+                    if (node.property.isvec) {
+                        // We currently don't support indexing by a vector because
+                        // it's basically undecideable if it's safe. We SHOULD 
+                        // support a mode that allows the user to bypass safety 
+                        // checks in case they know better than us however!
+                        unsupported(node);
+                    }
+
+                    if (mode === READ && !node.isvec) {
+                        // This node is not a vector and we're reading. Splat it.
+                        util.set(node, splat(util.clone(node)));
+                        return;
+                    }
+
+                    // At this point we know the node has a property that is a
+                    // function of the induction variable. Extract the factors to
+                    // ensure it's in a valid form.
+                    var factors = util.getFactors(node.property);
+                    if (factors === null) {
+                        // This means that the index was nonlinear. Currently this
+                        // is unsupported because it's very difficult to determine
+                        // if two accesses are the same (NP-Hard actually!). Again,
+                        // we should support a mode that allows the user to bypass
+                        // safety and let them take the responsibility for when 
+                        // abs(x) and (x * sign(x)) collide! 
+                        unsupported(node);
+                    }
+
+                    for (var term in factors.factors) {
+                        if (term !== iv.name) {
+                            // This means there was a non IV term in the index.
+                            // Currently we don't support this because the term may
+                            // be defined inside the loop and we would need to
+                            // place the vector read AFTER it was defined.
+                            unsupported(node);
+                        }
+                    }
+
+                    // At this point we know that the index is of the form 
+                    // a*iv+b which is the only mode we currently support :(
+                    // Create a unique key for the node so we don't continually
+                    // recreate this vector.
+                    var key = vectorkey(node.object, factors);
                 
-                // Create a unique key for the node so we don't continually
-                // recreate this vector.
-                var key = vectorkey(node.object, factors);
+                    // When processing a member expression, it will either be when
+                    // reading from it or writing to it. This changes our behavior:
+                    if (mode === READ) {
+                        // Performing a read. Convert this to a read from a temp
+                        // and add a vector.
+                        // Consider:
+                        //      x = a[i];
+                        // We want to compile this to:
+                        //      temp1 = vec(a[i], a[i+1], a[i+2], a[i+3]);
+                        //      x = temp1;
+                    
+                        if (!(key in vectorMap)) {
+                            // We have not seen this access before. Create a new
+                            // temporary and add it to the preEffects.
+                            var temp = mktemp(node.object);
+                            vectorMap[key] = { name: temp, retired: false };
+                            preEffects.push(vecReadIndex(temp, node, iv));
+                        }
 
-                // When processing a member expression, it will either be when
-                // reading from it or writing to it. This changes our behavior:
-                if (mode === READ) {
-                    // Performing a read. Convert this to a read from a temp
-                    // and add a vector.
-                    // Consider:
-                    //      x = a[i];
-                    // We want to compile this to:
-                    //      temp1 = vec(a[i], a[i+1], a[i+2], a[i+3]);
-                    //      x = temp1;
-                
-                    if (!(key in vectorMap)) {
-                        // We have not seen this access before. Create a new
-                        // temporary and add it to the preEffects.
-                        var temp = mktemp(node.object);
-                        vectorMap[key] = { name: temp, retired: false };
-                        preEffects.push(vecReadIndex(temp, node, iv));
+                        // Retrieve the temp from the vector map and use it.
+                        var temp = vectorMap[key];
+                        util.set(node, util.ident(temp.name));
+
+                    } else if (mode === WRITE) {
+                        // Performing a write. Write to a temporary so the 
+                        // assignment value remains the vector. We perform the 
+                        // side effect AFTER the whole assignment is done.
+                        // Consider: 
+                        //      a = (b[i] = 2) + 3;
+                        // We want to compile this to:
+                        //      a' = (temp1 = splat(2)) + splat(3);
+                        //      b[i] = temp1.x; b[i+1] = temp1.y; ...
+
+                        if (!(key in vectorMap)) {
+                            // We have not seen this write before. Create a new
+                            // temporary and add it to the maps. It will be added
+                            // to the post effects below.
+                            var temp = mktemp(node.object);
+                            vectorMap[key] = { name: temp, retired: false };
+                        }
+
+                        var temp = vectorMap[key];
+                        if (!temp.retired) {
+                            // This is the first write to this temp. Add a 
+                            // writeback to the postEffects.
+                            postEffects.push(vecWriteIndex(node.object, node.property, temp.name, iv));
+                            temp.retired = true;
+                        }
+
+                        util.set(node, util.ident(temp.name));
                     }
-
-                    // Retrieve the temp from the vector map and use it.
-                    var temp = vectorMap[key];
-                    util.set(node, util.ident(temp.name));
-
-                } else if (mode === WRITE) {
-                    // Performing a write. Write to a temporary so the 
-                    // assignment value remains the vector. We perform the 
-                    // side effect AFTER the whole assignment is done.
-                    // Consider: 
-                    //      a = (b[i] = 2) + 3;
-                    // We want to compile this to:
-                    //      a' = (temp1 = splat(2)) + splat(3);
-                    //      b[i] = temp1.x; b[i+1] = temp1.y; ...
-
-                    if (!(key in vectorMap)) {
-                        // We have not seen this write before. Create a new
-                        // temporary and add it to the maps. It will be added
-                        // to the post effects below.
-                        var temp = mktemp(node.object);
-                        vectorMap[key] = { name: temp, retired: false };
-                    }
-
-                    var temp = vectorMap[key];
-                    if (!temp.retired) {
-                        // This is the first write to this temp. Add a 
-                        // writeback to the postEffects.
-                        postEffects.push(vecWriteIndex(node.object, node.property, temp.name, iv));
-                        temp.retired = true;
-                    }
-
-                    util.set(node, util.ident(temp.name));
+                                    
                 }
+
                 trace("    Vector: " + escodegen.generate(node));
             },
             AssignmentExpression: function (node) {
@@ -806,7 +809,7 @@ vectorize = (function() {
         for (var elem in reductions) {
             // Currently only ident reduction variables are supported but we
             // should allow any SimpleVariable.
-            vectorVars[nodekey(util.ident(elem))] = util.clone(util.ident(elem));
+            vectorVars[util.getStaticIdent(util.ident(elem))] = util.clone(util.ident(elem));
         }
 
         // A list of statements that will populate temporaries needed in the 
@@ -835,7 +838,7 @@ vectorize = (function() {
                 if (node.id.type !== "Identifier") unsupported(node);
                 if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
                     trace("    Vector: " + node.id.name);
-                    vectorVars[nodekey(node.id)] = util.clone(node.id);
+                    vectorVars[util.getStaticIdent(node.id)] = util.clone(node.id);
                 } else {
                     trace("    Not a vector.");
                 }   
