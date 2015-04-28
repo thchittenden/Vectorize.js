@@ -137,7 +137,7 @@ tests.push({
         var b = 20;
         for (var i = 0; i < 100; i++) {
             w = z + 2;
-            z = w + 5;
+            z = w;
             a = b / 20;
             b = a * 15;
         }
@@ -156,6 +156,21 @@ tests.push({
             }
         }
         return args.arr;
+    }
+});
+
+tests.push({
+    name: 'Reductions That Read',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var x, y, z = 0, sum = 0;
+        for (var j = 0; j < args.length; j++) {
+            sum = z + args[i];
+            z = sum + y + z + args[i];
+            y = args[i] + x;
+            x -= args[i] + z;
+        }
+        return sum;
     }
 });
 
