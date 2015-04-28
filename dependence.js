@@ -493,8 +493,6 @@ dependence = (function() {
                 continue;
             }
 
-
-
             var opClass = null;
             for (var j = 0; j < sccs[i].length; j++) {
                 // If the expression by itself uses mixed operations on
@@ -509,12 +507,15 @@ dependence = (function() {
                     opClass = getOpClass(exprOp.op);
                 // If this node uses a different operation then the other nodes
                 // then the reduction is not safe.
-                } else if (opClass !== getOpClass(exprOp.op)) {
+                } else if (exprOp.op !== null && opClass !== getOpClass(exprOp.op)) {
                     console.log('Reduction mixes operations');
                     return null;
                 }
+            }
+
+            for (var j = 0; j < sccs[i].length; j++) {
                 var name = nodeToLhs(sccs[i][j]).name;
-                reductions[name] = getOpClass(exprOp.op);
+                reductions[name] = opClass;
             }
         }
 
