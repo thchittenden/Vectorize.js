@@ -475,7 +475,7 @@ vectorize = (function() {
 
                     // If this assignment is a vector, mark the LHS as a vector.
                     if (node.isvec) {
-                        vectorVars[nodekey(node.left)] = true;
+                        vectorVars[nodekey(node.left)] = util.clone(node.left);
                     }
                 } else {
                     // This is not a simple variable. Make sure it's of the form:
@@ -789,7 +789,7 @@ vectorize = (function() {
         for (var elem in reductions) {
             // Currently only ident reduction variables are supported but we
             // should allow any SimpleVariable.
-            vectorVars[nodekey(util.ident(elem))] = true;
+            vectorVars[nodekey(util.ident(elem))] = util.clone(util.ident(elem));
         }
 
         // A list of statements that will populate temporaries needed in the 
@@ -813,7 +813,7 @@ vectorize = (function() {
                 if (node.id.type !== "Identifier") unsupported(node);
                 if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
                     trace("    Vector: " + node.id.name);
-                    vectorVars[nodekey(node.id)] = true;
+                    vectorVars[nodekey(node.id)] = util.clone(node.id);
                 } else {
                     trace("    Not a vector.");
                 }   
@@ -960,9 +960,10 @@ vectorize = (function() {
         }
 
         // For liveouts we just use the last lane of the vector.
-        for (var i = 0; i < liveouts.length; i++) {
-            var name = liveouts[i];
-            stmts.push(util.assignment(util.ident(name), util.property(util.ident(name), 'w')));
+        for (var name in liveouts) {
+            var node = liveouts[name];
+            if (node.type === 'Identifier' && node.name in reductions) continue;
+            stmts.push(util.assignment(node, util.property(node, 'w')));
         }
 
         return util.block(stmts, false); 
@@ -1020,6 +1021,7 @@ vectorize = (function() {
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
                 var liveouts = vectorizeStatement(vectorloop.body, iv, reductions);
+                console.log(liveouts);
 
                 // Perform the reductions at the end of the loop.
                 var retires = performReductions(reductions, liveouts);
