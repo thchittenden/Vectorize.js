@@ -388,6 +388,23 @@ vectorize = (function() {
         });
     }
 
+    // This function annotates array expressions in the loop with a
+    // 'noconflict' property which indicates whether it's safe to use the array
+    // expression with vector variables. This function errs on the side of
+    // caution and only validates array expressions if all indexes are either
+    // constants or expressions of a loop invariant expression that are safe.
+    // It's important to check this for vectors due to cases like this:
+    //      b[0] = i;
+    //      b[1] = 2;
+    //      a[i] = b[SOME_CONSTANT];
+    // Since it depends SOME_CONSTANT how to compile this, we don't want to 
+    // allow cases like this.
+    function checkArrayExpressions(loop, iv) {
+        
+        // TODO.
+
+    }
+
     // Augments an expression AST with two properties: 'isvec' and 'isidx'.
     // 'isvec' indicates whether a node's value is a SIMD vector. 'isidx' 
     // indicates whether a node's value is derived from the induction variable.
@@ -482,13 +499,13 @@ vectorize = (function() {
                     //      obj.x.y.z[a*i + b]
                     // Otherwise we don't support it.
                     assert(node.left.type === 'MemberExpression');
-                    if (!node.left.computed || !isSimpleVariable(node.left.object)) {
+                    this.visit(node.left);
+                    if (!node.left.isvec) {
+                        // The LHS didn't depend on the IV. This means it was 
+                        // indexed by some variable that dependency analysis didn't
+                        // track so we don't know if it's safe. 
                         unsupported(node);
                     }
-
-                    // Visit the LHS and assert it's a vector.
-                    this.visit(node.left);
-                    assert(node.left.isvec);
                     node.isvec = true;
                     node.isidx = false;
                 }
@@ -800,6 +817,11 @@ vectorize = (function() {
         // statement to the appropriate arrays
         var postEffects = [];
 
+        // If we're in an inner loop, we can support break statements. 
+        // Otherwise it would involve retiring only PART of the vector
+        // which would be difficult.
+        var allowBreak = false;
+
         // Vectorize statements.
         esrecurse.visit(stmt, {
             
@@ -822,7 +844,9 @@ vectorize = (function() {
             ForStatement: function (node) {
                 if (node.test !== null && node.test.invariant) {
                     trace("Processing FOR: " + escodegen.generate(node));
+                    allowBreak = true;
                     this.visit(node.body);
+                    allowBreak = false;
                 } else {
                     trace ("Test not loop invariant: " + escodegen.generate(node.test));
                     unsupported(node);
@@ -832,7 +856,9 @@ vectorize = (function() {
             WhileStatement: function (node) {
                 if (node.test.invariant) {
                     trace("Processing WHILE: " + escodegen.generate(node));
+                    allowBreak = true;
                     this.visit(node.body);
+                    allowBreak = false;
                 } else {
                     trace ("Test not loop invariant: " + escodegen.generate(node.test));
                     unsupported(node);
@@ -842,7 +868,9 @@ vectorize = (function() {
             DoWhileStatement: function (node) {
                 if (node.test.invariant) {
                     trace("Processing DOWHILE: " + escodegen.generate(node));
+                    allowBreak = true;
                     this.visit(node.body);
+                    allowBreak = false;
                 } else {
                     trace ("Test not loop invariant: " + escodegen.generate(node.test));
                     unsupported(node);
@@ -851,14 +879,31 @@ vectorize = (function() {
 
             IfStatement: function (node) {
                 trace("Procesing IF: " + escodegen.generate(node));
-                this.visit(node.consequent);
-                // TODO: optimization if condition is loop invariant.
+                if (node.test.invariant) {
+                    // The easy case. If the test is invariant we always take 
+                    // the same branch so just visit the two sub-branches.
+                    this.visit(node.consequent);
+                    if (node.alternate !== null) this.visit(node.alternate);
+                } else {
+                    // The hard case. If the test is variant then we have to 
+                    // execute both branches into separate temps and recombine 
+                    // them when we're done.
+                    unsupported(node);
+                }
             },
 
+            BreakStatement: function (node) {
+                if (!allowBreak) {
+                    unsupported(node);
+                }
+            },
+            ContinueStatement: function (node) {
+                if (!allowBreak) {
+                    unsupported(node);
+                }   
+            },
 
             LabeledStatement: unsupported,
-            BreakStatement: unsupported,
-            ContinueStatement: unsupported,
             WithStatement: unsupported,
             SwitchStatement: unsupported,
             ReturnStatement: unsupported,

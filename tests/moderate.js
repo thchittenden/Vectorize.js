@@ -32,6 +32,70 @@ tests.push({
 });
 
 tests.push({
+    name: 'Double Nested Loops',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 100;
+            for (var j = 0; j < x; j++) {
+                for (var k = 0; k < x; k++) {
+                    args[i] += k;
+                }
+            }
+        }
+    }
+});
+
+tests.push({
+    name: 'Double Nested Loops Inner Index',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 100;
+            for (var j = 0; j < x; j++) {
+                for (var k = 0; k < j; k++) {
+                    args[i] += k;
+                }
+            }
+        }
+    }
+});
+
+tests.push({
+    name: 'Nested Loop Inner Break',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 100;
+            for (var j = 0; j < x; j++) {
+                args[i] += x;
+                if (j > x/2) {
+                    break;
+                }
+            }
+        }
+    }
+});
+
+
+tests.push({
+    name: 'Nested Loop Inner Continue',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            var x = 100;
+            for (var j = 0; j < x; j++) {
+                args[i] += x;
+                if (j < x/2) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+});
+tests.push({
     name: 'Index Arithmetic',
     args: new Array(100).fill(0),
     fn: function fn (args) {
