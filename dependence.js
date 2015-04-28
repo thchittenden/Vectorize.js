@@ -1,6 +1,7 @@
 dependence = (function() {
     var estraverse = require('estraverse');
     var esrecurse = require('esrecurse');
+    var escodegen = require('escodegen');
     var _ = require('underscore');
     
     var dependence = {};
@@ -273,7 +274,7 @@ dependence = (function() {
         for (var i = 0; i < g.nodes.length; i++) {
             if (g.nodes[i].left.type === 'MemberExpression' && _.any(g.edges[i])) {
                 var left = escodegen.generate(nodeToLhs(i));
-                var ridx = _.find(g.edges[i], _.identity);
+                var ridx = _.indexOf(g.edges[i], true);
                 var right = escodegen.generate(nodeToLhs(ridx));
                 throw ("invalid dependence between " + left + " and " + right);
             }
