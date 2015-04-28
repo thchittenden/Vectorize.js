@@ -874,6 +874,10 @@ vectorize = (function() {
 
         // Now we need to add the side effects to our statement.
         util.set(stmt, util.block(preEffects.concat(util.clone(stmt)).concat(postEffects), true));
+
+        // Return the set of vector variables which will be the liveouts of 
+        // the loop.
+        return vectorVars;
     }
 
     function updateLoopBounds(vecloop, loop, iv) {
@@ -895,24 +899,36 @@ vectorize = (function() {
         loop.init = null;
     }
 
+    // At the beginning of the loop we need to initialize reduction variables
+    // so that they're vectors:
+    //      x = v(x, 0, 0, 0) for '+'
+    //      x = v(x, 1, 1, 1) for '*'
+    function initReductions(reductions) {
+        var inits = [];
+        for (var variable in reductions) {
+            var id = util.ident(variable)
+            var identity = util.literal(reductions[variable] === '+' ? 0 : 1);
+            inits.push(util.assignment(id, util.call(vectorConstructor, [id, identity, identity, identity])));
+        }
+        return util.block(inits, false);
+    }
+
     // At the end of the loop, any reduction variable will be a vector 
     // containing reductions for each lane. This function performs reductions
     // on these vectors so they appear valid after the loop. 
-    function performReductions(loop, reductions, liveouts) {
+    function performReductions(reductions, liveouts) {
         if (reductions.length === 0 && liveouts.length === 0) {
             // Nothing to do.
             return;
         }
         
         // Create an array that will hold all reduction assignment expressions.
-        var stmts = [util.clone(loop)];
+        var stmts = [];
 
         // For reductions we just perform the reduction across the four lanes
         // of the vector.
-        for (var i = 0; i < reductions.length; i++) {
-            var reduction = reductions[i];
-            var name = reduction.name;
-            var op = reduction.op;
+        for (var name in reductions) {
+            var op = reductions[name];
             var red1 = util.binop(util.property(util.ident(name), 'x'), op, util.property(util.ident(name), 'y'));
             var red2 = util.binop(util.property(util.ident(name), 'z'), op, util.property(util.ident(name), 'w'));
             var red3 = util.binop(red1, op, red2);
@@ -921,11 +937,11 @@ vectorize = (function() {
 
         // For liveouts we just use the last lane of the vector.
         for (var i = 0; i < liveouts.length; i++) {
-            var name = liveouts[i].name;
+            var name = liveouts[i];
             stmts.push(util.assignment(util.ident(name), util.property(util.ident(name), 'w')));
         }
 
-        util.set(loop, util.block(stmts, false));
+        return util.block(stmts, false); 
     }
 
     // Removes unneeded compound statements inserted when we needed to turn a 
@@ -956,31 +972,21 @@ vectorize = (function() {
             ForStatement: function (node) {
                 var vectorloop = util.clone(node);
                 var scalarloop = util.clone(node);
+                var iv = dependence.detectIV(vectorloop);
+             
+                // Perform some pre-processing to make things easier.
+                canonicalizeAssignments(vectorloop.body);
+                markLoopInvariant(vectorloop.body, iv);
 
-                var reds = dependence.mkReductions(vectorloop, iv);
-                if (reds === null) {
+                // Perform dependency analysis and find the reduction variables.
+                var reductions = dependence.mkReductions(vectorloop, iv);
+                if (reductions === null) {
                     throw 'unsupported reductions!';
                 }
-                
-                // Canonicalize assignments to make things easier.
-                canonicalizeAssignments(vectorloop.body);
 
-                // Detect the induction variable in the loop.
-                var iv = dependence.detectIV(vectorloop);
-               
-                // Mark loop invariant expressions.
-                markLoopInvariant(vectorloop.body, iv);
-                logInvariant(vectorloop);
-                
-                // Get the reduction operations in the loop. This should be 
-                // auto-detected in the future.
-                var valid = true; 
-                if (valid === null) {
-                    // Safety checks determined we can't vectorize. Bail out.
-                    throw "dependency check failure";
-                }
-                //var reductions = valid.reductions;
-                //var liveouts = valid.liveouts;
+                // Initialize the reductions by assigning each reduction variable
+                // an appropriate vector.
+                var inits = initReductions(reductions);
                 
                 // Update the loop bounds so we perform as much of the loop in
                 // vectors as possible. This converts:
@@ -989,15 +995,15 @@ vectorize = (function() {
                 //      for (var i = 0; (i + 3) < a.length; i = i + 4)
                 //      for (; i < a.length; i++)
                 updateLoopBounds(vectorloop, scalarloop, iv);
-                vectorizeStatement(vectorloop.body, iv);
+                var liveouts = vectorizeStatement(vectorloop.body, iv, reductions);
                 cleanupBlocks(vectorloop.body);
 
                 // Perform the reductions at the end of the loop.
-                //performReductions(vectorloop, reductions, liveouts);
+                var retires = performReductions(reductions, liveouts);
 
                 // Append the serial code to the vectorized code. This allows 
                 // us to process loops of size not mod 4.
-                util.set(node, util.block([vectorloop, scalarloop], true));
+                util.set(node, util.block([inits, vectorloop, retires, scalarloop], true));
             }
         });
 
