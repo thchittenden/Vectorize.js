@@ -357,6 +357,38 @@ dependence = (function() {
             });
         };
 
+        // Whether a variable is redefined in between a and b
+        var redefined = function(def, a, b) {
+            var start = (a + 1) % g.nodes.length;
+            var end = b;
+            for (var i = start; i != end; i = (i + 1) % g.nodes.length) {
+                var curDef = nodeToLhs(i);
+                if (util.astEq(curDef, def)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // Whether a variable has a cross iteration dependence that
+        // is also in it's SCC.
+        var hasCrossIterDep = function (n) {
+            var lhs = nodeToLhs(n);
+            var origSCC = getSCC(n);
+            for (var i = n; i < g.nodes.length; i++) { 
+                if (g.edges[i][n] && (!redefined(lhs, i, n)) && origSCC === getSCC(i)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        
+        // Whether a SCC of scalars is a reduction.
+        var isReduction = function (scc) {
+            return _.any(scc, hasCrossIterDep);
+        };
+        
+
         for (var i = 0; i < sccs.length; i++) { 
             // Arrays are already verified.
             if (nodeToLhs(sccs[i][0]).type === 'MemberExpression') {
@@ -365,19 +397,24 @@ dependence = (function() {
 
             // Make sure trivial nodes are 'safe'.
             if (isTrivial(sccs[i])) {
-                if (!hasSafeEdges(sccs[i][0])) {
+                /*if (!hasSafeEdges(sccs[i][0])) {
                     throw 'trivial node has unsafe edges';
-                }
+                } */
                 continue;
             } 
+
+            console.log(sccs[i]);
+            console.log(isReduction(sccs[i]));
+            if (!isReduction(sccs[i])) {
+                continue;
+            }
 
             // Make sure that SCC's only have self contained edges.
             if (!selfContained(sccs[i])) { 
                 throw 'reduction is not self contained.';
             }
         }
-        
-        
+       
         var reductions = {};
         for (var i = 0; i < sccs.length; i++) { 
             // If the scc is an array then it's not a reduction so we don't
@@ -387,8 +424,15 @@ dependence = (function() {
                 continue;
             }
 
+            // SCC's are only reductions if some member has a cross iteration
+            // dependence.
+            if (!isReduction(sccs[i])) {
+                continue;
+            }
+
             var opClass = null;
             for (var j = 0; j < sccs[i].length; j++) {
+
                 // If the expression by itself uses mixed operations on
                 // reduction variables, then the loop is not safe.
                 var exprOp = getReductionOp(sccs[i], nodeToRhs(sccs[i][j]));
