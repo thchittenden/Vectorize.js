@@ -38,7 +38,7 @@ vectorize = (function() {
     }
 
     function nodekey(node) {
-        var id = escodegen.generate(node);
+        var id = node.type + '_' + escodegen.generate(node);
         return id.replace(/[-\+\*\/\.\[\]]/g, '_');
     }
 
@@ -83,7 +83,7 @@ vectorize = (function() {
                 }
             }
         });
-        return expr;
+        return util.canonExpression(expr);
     }
     
     // Constructs a vector by replacing the IV in the expression with 
@@ -117,6 +117,21 @@ vectorize = (function() {
             writes[i] = util.assignment(write, read); 
         }
         return util.block(writes, false);
+    }
+
+    // Tests whether a node is a 'simple' variable. This means we can identify
+    // this node completely by its name. This includes things such as
+    // uncomputed member expressions and identifiers.
+    function isSimpleVariable(node) {
+        var simple = true;
+        estraverse.traverse(node, {
+            enter: function (node) {
+                if (node.type === "Identifier") return;
+                if (node.type === "MemberExpression" && node.computed === false) return;
+                simple = false;
+            }
+        });
+        return simple;
     }
 
     // Converts all assignemnts of the form x *= y into x = x * y. This makes
@@ -394,7 +409,7 @@ vectorize = (function() {
                 node.isidx = false;
             },
             Identifier: function (node) {
-                node.isvec = node.name in vectorVars;
+                node.isvec = nodekey(node) in vectorVars;
                 node.isidx = node.name === iv.name;
                 assert(!(node.isvec && node.isidx));
             },
@@ -405,9 +420,9 @@ vectorize = (function() {
                     this.visit(node.property);
                     node.isvec = node.property.isvec || node.property.isidx;
                 } else {
-                    // An uncomputed access is never a vector. This is of the
-                    // form 'obj.property'.
-                    node.isvec = false;
+                    // An uncomputed access is a vector if a vector has been
+                    // assigned to it.
+                    node.isvec = nodekey(node) in vectorVars;
                     node.isidx = false;
                 }
             },
@@ -439,35 +454,44 @@ vectorize = (function() {
                 node.isidx = !node.isvec && (node.test.isidx || node.alternate.isidx || node.consequent.isidx);
             },
             AssignmentExpression: function (node) {
+                assert(node.left.type === 'Identifier' || node.left.type === 'MemberExpression');
                 this.visit(node.right);
-                
-                // Remove this identifier from the list of vector variables. 
-                // This way, when we visit the LHS it will not be marked as a 
-                // vector if the OLD value of the LHS was a vector. e.g. in
-                //      var x = a[i];
-                //      x = 2;
-                // x should not be a vector in the second statement.
-                if (node.left.type === "Identifier") {
-                    delete vectorVars[node.left.name];
-                }
-                this.visit(node.left);
 
-                // An assignment is a vector in two cases: 
-                //      1. The LHS is a vector meaning it will eventually need 
-                //          to be retired to an array (e.g. a[i] = 2);
-                //      2. The RHS is either a vector or an index. We cannot 
-                //         preserve 'isidx' as given the current expression we
-                //         do not know how the result will be used. For 
-                //         performant code, make sure not to assign the index 
-                //         before using it to index!
-                node.isvec = node.right.isidx || node.right.isvec || node.left.isvec;
-                node.isidx = false;
-               
-                // If this node was a vector and the LHS was an identifier, 
-                // that identifier is now a vector.
-                if (node.isvec && node.left.type === "Identifier") {
-                    vectorVars[node.left.name] = true;
-                }   
+                if (isSimpleVariable(node.left)) {
+                    // Remove this identifier from the list of vector variables. 
+                    // This way, when we visit the LHS it will not be marked as a 
+                    // vector if the OLD value of the LHS was a vector. e.g. in
+                    //      var x = a[i];
+                    //      x = 2;
+                    // x should not be a vector in the second statement.
+                    delete vectorVars[nodekey(node.left)];
+
+                    // We don't need to visit the left node because it can't
+                    // be a vector. LValues can only be vectors when they 
+                    // depend on the induction variable which a simple variable
+                    // can't.
+                    node.isvec = node.right.isidx || node.right.isvec;
+                    node.isidx = false;
+
+                    // If this assignment is a vector, mark the LHS as a vector.
+                    if (node.isvec) {
+                        vectorVars[nodekey(node.left)] = true;
+                    }
+                } else {
+                    // This is not a simple variable. Make sure it's of the form:
+                    //      obj.x.y.z[a*i + b]
+                    // Otherwise we don't support it.
+                    assert(node.left.type === 'MemberExpression');
+                    if (!node.left.computed || !isSimpleVariable(node.left.object)) {
+                        unsupported(node);
+                    }
+
+                    // Visit the LHS and assert it's a vector.
+                    this.visit(node.left);
+                    assert(node.left.isvec);
+                    node.isvec = true;
+                    node.isidx = false;
+                }
             },
             SequenceExpression: function (node) {
                 // The value of a sequence expression is the value of the last
@@ -589,8 +613,19 @@ vectorize = (function() {
             },
             MemberExpression: function (node) {
                 trace("Processing MEMBER: " + escodegen.generate(node));
-                if (!node.isvec) {
-                    // This node is not a vector. Splat it.
+                if (mode === WRITE && node.computed && !node.isvec) {
+                    // Trying to use a computed node as a vector. We can't 
+                    // support this as we can't track what variables are vectors
+                    // and which aren't. Consider:
+                    //      x[0] = a[i];
+                    //      var y = x[f(0)];
+                    //      a[i] = y;
+                    // Is y a vector? Is it a constant?
+                    unsupported(node);
+                }
+
+                if (mode === READ && !node.isvec) {
+                    // This node is not a vector and we're reading. Splat it.
                     util.set(node, splat(util.clone(node)));
                     return;
                 }
@@ -773,7 +808,7 @@ vectorize = (function() {
                 if (node.id.type !== "Identifier") unsupported(node);
                 if (vectorizeExpression(node.init, iv, vectorMap, vectorVars, preEffects, postEffects)) {
                     trace("    Vector: " + node.id.name);
-                    vectorVars[node.id.name] = true;
+                    vectorVars[nodekey(node.id)] = true;
                 } else {
                     trace("    Not a vector.");
                 }   
@@ -924,7 +959,7 @@ vectorize = (function() {
 
                 var reds = dependence.mkReductions(vectorloop, iv);
                 if (reds === null) {
-                    throw 'Unsupported Reductions!';
+                    throw 'unsupported reductions!';
                 }
                 
                 // Canonicalize assignments to make things easier.

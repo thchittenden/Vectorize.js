@@ -165,3 +165,17 @@ tests.push({
     }
 });
 
+tests.push({
+    name: 'Reduction non-scalar',
+    args: [1, 2, 3, 4, 5, 6, 7, 8],
+    fn: function fn (args) {
+        var b = [0, 0, 0];
+        for (var i = 0; i < args.length; i++) {
+            b[0] += args[i];
+            b[1] += b[0];
+            b[2] += b[1];
+        }
+        return b;
+    }   
+});
+

@@ -229,7 +229,7 @@ util = (function(){
                     }
                     case '/': {
                         // We may only divide by constants.
-                        if (!isempty(rprod)) {
+                        if (!isempty(rfactors)) {
                             valid = false;
                         } else {
                             for (elem in lfactors) {
@@ -290,28 +290,40 @@ util = (function(){
     }
 
     util.canonExpression = function (expr) {
-        
-        var factors = util.getFactors(expr);
-        var ret = null;
-        for (elem in factors.factors) {
-            if (ret === null) {
-                // First iteration.
-                ret = util.ident(elem);
-                if (factors.factors[elem] != 1) {
-                    ret = util.binop(util.literal(factors.factors[elem]), '*', ret);
-                }
-            } else {
-                if (factors.factors[elem] != 1) {
-                    ret = util.binop(util.binop(util.literal(factors.factors[elem]), '*', util.ident(elem)), '+', ret);
+       
+        function canonicalize(node) {
+            var factors = util.getFactors(node);
+            var ret = null;
+            for (elem in factors.factors) {
+                if (ret === null) {
+                    // First iteration.
+                    ret = util.ident(elem);
+                    if (factors.factors[elem] != 1) {
+                        ret = util.binop(util.literal(factors.factors[elem]), '*', ret);
+                    }
                 } else {
-                    ret = util.binop(util.ident(elem), '+', ret);
+                    if (factors.factors[elem] != 1) {
+                        ret = util.binop(util.binop(util.literal(factors.factors[elem]), '*', util.ident(elem)), '+', ret);
+                    } else {
+                        ret = util.binop(util.ident(elem), '+', ret);
+                    }
                 }
             }
+            if (factors.constant !== 0) {
+                ret = util.binop(ret, '+', util.literal(factors.constant));
+            }
+            return ret;
         }
-        if (factors.constant !== 0) {
-            ret = util.binop(ret, '+', util.literal(factors.constant));
-        }
-        return ret;
+
+        esrecurse.visit(expr, {
+            BinaryExpression: function (node) {
+                util.set(node, canonicalize(node)); 
+            },
+            UnaryExpression: function (node) {
+                util.set(node, canonicalize(node));
+            }
+        });
+        return expr;
     }
 
     return util;

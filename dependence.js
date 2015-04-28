@@ -367,7 +367,7 @@ dependence = (function() {
     dependence.mkReductions = function (loop, iv) {
         if (!basicFilters(loop)) {
             console.log('failed filters');
-            return null; 
+            //return null; 
         }
         var g = mkDepGr(loop);
         var sccs = findSCCs(g.nodes, g.edges); 

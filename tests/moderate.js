@@ -199,3 +199,39 @@ tests.push({
         return 0;
     }
 });
+
+tests.push({
+    name: 'Reduction in property',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        var obj = { x: { y: 0 } };
+        for (var i = 0;  i < args.length; i++) {
+            obj.x.y += args[i];
+        }
+        return args;
+    }
+});
+
+// The second index is 0 so the dependency checker should fail this.
+tests.push({
+    name: 'Weird indexes',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            args[(2*i + 2)/2 - 1] = 1 + args[i + 2 - (i * 2)/4 + i/2 - i - 2]; 
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'Weird indexes 2',
+    args: [0, 1, 2, 3, 4, 5, 6, 7],
+    fn: function fn (args) {
+        for (var i = 0; i < args.length; i++) {
+            args[(2*i + 2)/2 - 1] = 1 + args[i + 2 - (i * 2)/4 - i/2 + i - 2]; 
+        }
+        return args;
+    }
+});
+
