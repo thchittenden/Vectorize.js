@@ -10,7 +10,7 @@ dependence = (function() {
         // Get the factors in the polynomial and make sure there is only an IV
         // term.
         var factors = util.getFactors(expr);
-        for (var elem in factors) {
+        for (var elem in factors.factors) {
             if (elem != iv) {
                 return null;
             }
@@ -48,20 +48,10 @@ dependence = (function() {
     }
 
     function lamport(a, b, iv) {
-        if (a.type === 'Identifier' && b.type === 'Identifier' && a.name === b.name) {
-            return {
-                IsDep: true,
-                Dist: 0
-            };
-        }
-
-        if (a.type !== 'MemberExpression' || b.type !== 'MemberExpression') {
-            return null;
-        }
-
         // Both are array access
-        var aInfo = getIVFactors(a.property, iv);
-        var bInfo = getIVFactors(b.property, iv);
+        var aInfo = getIVFactors(a, iv);
+        var bInfo = getIVFactors(b, iv);
+        console.log(aInfo, bInfo);
 
         if (aInfo === null || bInfo === null) {
             // The indexes were not of the form a*i+b
@@ -72,7 +62,7 @@ dependence = (function() {
             return null;
         }
 
-        var dist = (aInfo.Offset - bInfo.Offset) / a.Scale;
+        var dist = (aInfo.Offset - bInfo.Offset) / aInfo.Scale;
         if (!util.isInt(dist)) {
             return {
                 IsDep: false,
@@ -143,6 +133,7 @@ dependence = (function() {
 
             if (util.astEq(e1.object, e2.object)) {
                 var dep = lamport(e1.property, e2.property, iv);
+                console.log(dep);
                 // Lamport's test determines the indexes may clash so this
                 // is unsafe.
                 if (dep === null) {
@@ -257,7 +248,7 @@ dependence = (function() {
     }
 
     dependence.mkReductions = function (loop, iv) {
-        var g = mkDepGr(loop, iv);
+        var g = mkDepGr(loop, iv.name);
         var sccs = findSCCs(g.nodes, g.edges); 
         console.log(g);
         console.log(sccs);
