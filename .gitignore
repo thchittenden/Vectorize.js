@@ -4,4 +4,4 @@ node_modules/
 *.swp
 *.out
 *.aux
-report.log
+*.log
