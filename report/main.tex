@@ -472,12 +472,12 @@ not diminish speed in IO bound loops.
 
 The overall process for vectorizing loops was the following:
 \begin{itemize}
-\item Convert function source code to Mozilla AST using Esprima.
+    \item Convert function source code to Mozilla AST using Esprima\cite{esprima}.
 \item Augment the AST with loop invariance information.
 \item Perform dependency analysis to detect reductions/dependence vectors.
 \item Annotate AST nodes with whether they are dependent on the induction variable.
 \item Perform vectorization in the AST.
-\item Generate Javascript from the AST using Escodegen.
+\item Generate Javascript from the AST using Escodegen\cite{escodegen}.
 \end{itemize}
 
 The implementation was split into two major sections: dependency analysis and
@@ -582,7 +582,7 @@ test contains a log of both the scalar and vectorized versions of the code.
 To test performance of our code we created a suite of benchmarks testing
 various loops that compared our vectorized code to both the scalar code and a
 hand vectorized version. It should be noted that since SIMD.js is only
-supported in the Spidermonkey engine, any performance tests must be conducted
+supported in the Spidermonkey\cite{spidermonkey} engine, any performance tests must be conducted
 using either a browser that uses SpiderMonkey (for example, Firefox) or the
 SpiderMonkey Javascript shell.  We chose to perform our tests in the
 SpiderMonkey shell as this provided the most stable testing environment. We
