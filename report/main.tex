@@ -439,13 +439,55 @@ Email: thchittenden@cmu.edu}}
 \subsection{Contributions}
 
 \section{Approach Extended}
+
+The overall process for vectorizing loops was the following:
+\begin{itemize}
+\item Convert function source code to Mozilla AST using Esprima.
+\item Augment the AST with loop invariance information.
+\item Perform dependency analysis to detect reductions/dependence vectors.
+\item Annotate AST nodes with whether they are dependent on the induction variable.
+\item Perform vectorization in the AST.
+\item Generate Javascript from the AST using Escodegen.
+\end{itemize}
+
+The implementation was split into two major sections: dependency analysis and
+code vectorization. 
+
+\subsection{Dependency Analysis}
+
+\subsection{Vectorization}
+Our initial approach to vectorization was based on a set of inference rules we
+derived that provided transformations for how to convert expressions into
+equivalent 4-wide vector expressions. As our approach developed to focus more
+on efficiency and to support a wider variety of JavaScript language constructs,
+our implementation diverged from these original inference rules. At this time
+we support vectorization of the following construcs:
+\begin{itemize}
+\item Binary Operators: +, -, \*, /, <, <=, ==, >=, >
+\item Unary Operators: ++, --
+\item Reductions: +, -, \*, /
+\item Nested loops
+\item Conditionals with loop invariant tests
+\end{itemize}
+If at any point our library determines it is unsafe to vectorize a function it
+fails and returns a reference to the original function thereby not breaking the
+code.
+
+\subsubsection{Odd Sized Arrays}
+In order to support arrays that are not a multiple of the vector size we
+updated the bounds of the loop to perform as many vector sized chunks of work
+as possible and then appended the original serial loop to the end of the
+vectorized loop that picked up where the vectorized version left off. While
+this approach doubled code size, it allowed us to avoid any extra expensive
+conditionals in the loop we're vectorizing.
+
 \section{Experimental Setup}
 
-In order to test the correctness of our optimization we created a QUnit test
-suite with 50 tests encompassing a large set of possible loop operations. We
-continually tested against this set of tests to ensure our optimizations were
-not breaking any code. This page can be found at
-\url{http://www.contrib.andrew.cmu.edu/~mdehesaa/745/tests/tests.html}.  Each
+In order to test the correctness of our optimization we created a
+QUnit\cite{qunit} test suite with 50 tests encompassing a large set of possible
+loop operations. We continually tested against this set of tests to ensure our
+optimizations were not breaking any code. This page can be found at
+\url{http://www.contrib.andrew.cmu.edu/~mdehesaa/745/tests/tests.html}. Each
 test contains a log of both the scalar and vectorized versions of the code. 
 
 To test performance of our code we created a suite of benchmarks testing
@@ -459,10 +501,10 @@ utilized the Benchmark.js library in order to provide statistically significant
 results.
 
 One limitation with performance testing is how high level a language JavaScript
-is. Because it's interpreted, it's very hard to to tell how the JavaScript  function will be
+is. Because it's interpreted, it's very hard to to tell how the JavaScript function will be
 compiled to machine code and what optimizations will be applied to it. In our
 performance tests this is evident as on some tests we see speedup as high as 10x
-which is clearly impossible given 4-wide SIMD!
+which is clearly impossible as a result of applying 4-wide vectoriztion!
 
 \section{Experimental Evaluation}
 
@@ -471,7 +513,7 @@ understand the potential speedup available on our underlying platform. Since
 JavaScript is such a high level language it is difficult to predict how small
 changes in code will affect performance due to the large amount of intermediary
 processing that occurs in the JavaScript engine. One method of characterizing 
-the underlying platform is to use a roofline model. This model shows how as we
+the underlying platform is to use a roofline model\cite{roofline}. This model shows how as we
 vary the computational complexity of an operation (the X axis), its computational
 throughput changes (the Y axis). In Figure 1 we present the roofline model
 generated on our test machine: a mid-2012 Macbook Pro with SSE4.
@@ -479,7 +521,7 @@ generated on our test machine: a mid-2012 Macbook Pro with SSE4.
 \begin{figure}[!t]
     \centering
     \includegraphics[width=2.5in]{roofline1}
-    \caption{Figure 1}
+    \caption{Roofline model of hand-tuned JavaScript using both optimized vector loads and naive vector construction}
 \end{figure}
 
 The distinction between the "SIMD" and "SIMD Naive" lines is that the "SIMD"
@@ -497,7 +539,7 @@ SIMD implementation.
 \begin{figure}[!t]
     \centering
     \includegraphics[width=2.5in]{roofline2}
-    \caption{Figure 2}
+    \caption{Roofline model of auto-generated vector code vs. hand-tuned vector code}
 \end{figure}
 
 We see that our auto-generated version produces identical results the hand 
@@ -507,12 +549,47 @@ the vectorized version of the code achieved a nearly 4x speedup at approximately
 a very large number for typical JavaScript, but even on loops with as few as 
 four operations per float, a nearly 2x speedup was observed.
 
-\subsection{Index Efficiency}
 While vectorizing code, there are many things to take into account in terms of
-generating efficient code. Our first approach to vectorization was to transform
-the induction variable into a vector of four consecutive steps of the induction
-variable and then index into the array using the vector accessors. Our code ended
-up looking like this:
+generating efficient code. In JavaScript this is especially true as there many
+ways to achieve identical results. In the following sections we describe three
+optimizations made while generating code that greatly increased performance on
+three selected benchmarks: Map +2, Map Inner Loop 1, and Map Inner Loop 2. Map
++2 simply adds two to every index of an array. This benchmark has very low
+computational complexity and gives advantage to the scalar version which will
+not incur the overhead of vector construction. Map Inner Loop 1 and 2, by
+contrast, have a very high computational complexity and show us how the
+JavaScript engine reacts to a tight inner loop adding a constant every
+iteration and a tight inner loop adding a variable every iteration.
+
+\subsection{Local Variables}
+In order to achieve vectorization, our library generates temporaries to
+hold SIMD vectors corresponding to various indices. This allows us to avoid
+reading the array multiple times to construct identical vectors. In the first
+iteration of our library we assigned directly to these temporaries instead
+of declaring them first. This resulted in the JavaScript engine scanning the
+current environment for variables of that name to overwrite every time we
+created a new temporary. When we observed a nearly 40x slowdown vs. scalar
+code we suspected this may be a problem! By converting all temporary assignments
+to declare the temporary as local we significantly sped up the code. Table
+1 summarizes the gains from this optimization.
+
+\begin{table}[!t]
+\centering
+\caption{}
+\begin{tabular}{|l||c|c|c|c|}
+\hline
+Benchmark & Scalar & Hand-Tuned & Global & Local \\ \hline
+Map +2 & 0.059ms & 0.192ms & 22.133ms & 9.749ms \\ \hline
+Map Inner Loop 1 & 8.819ms & 3.798ms & 299.308ms & 13.824ms \\ \hline
+Map Inner Loop 2 & 25.319ms & 2.357ms & 389.091ms & 11.714ms \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Index Efficiency}
+Our first approach to vectorization was to transform the induction variable
+into a vector of four consecutive steps of the induction variable and then
+index into the array using the vector accessors. Our code ended up looking like
+this:
 \begin{verbatim}
 for (int i = 0; i + 3 < len; i += 4) {
     var temp_i = vec(i, i+1, i+2, i+3);
@@ -539,12 +616,11 @@ for (int i = 0; i + 3 < len; i += 4) {
 }
 \end{verbatim}
 
-In Table 1 we present results for three benchmarks run using the two mentioned
-approaches.  We see in the general case this optimization reduced our execution
-time by about 0.8ms howver in a simple map (+2) operation we reduced our
-execution time by over 20x. This is likely due to the javascript engine being
-able to recognize the loop in the second case and optimizing much more
-aggresively.
+In Table 2 we present results for this optimization. We see in the general case
+this optimization reduced our execution time by about 0.8ms howver in the
+simple map (+2) operation we reduced our execution time by over 20x. This is
+likely due to the javascript engine being able to recognize the loop in the
+second case and optimizing much more aggresively.
 
 \begin{table}[!t]
 \centering
@@ -573,7 +649,7 @@ we expected to have more standardized results. We found this made a significant
 improvement in runtimes such that our auto generated versions performed nearly
 identically to the hand-tuned versions.
 
-In Table 2 we present the results of this modification. This optimization
+In Table 3 we present the results of this modification. This optimization
 completely closed the gap between the hand-tuned version and the auto-generated
 one.
 
