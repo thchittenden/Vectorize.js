@@ -406,7 +406,13 @@ Email: thchittenden@cmu.edu}}
 
 \begin{abstract}
 %\boldmath
-\blindtext[1]
+In this paper we discuss Vectorize.js, a library for performing automatic
+outer-loop vectorization of JavaScript using SIMD.js. Vectorize.js performs
+source-to-source rewriting in the browser using a collection of ECMAScript parsing/code
+generation frameworks. This allows the user to vectorize code by simply
+passing the function to vectorize to the library. This transformation results
+in code that runs up to 4x faster for highly CPU bound loops and does
+not diminish speed in IO bound loops.
 \end{abstract}
 % IEEEtran.cls defaults to using nonbold math in the Abstract.
 % This preserves the distinction between vectors and scalars. However,
@@ -417,7 +423,7 @@ Email: thchittenden@cmu.edu}}
 
 % Note that keywords are not normally used for peerreview papers.
 \begin{IEEEkeywords}
-  JavaScript, SIMD, vectorization
+  JavaScript, SIMD, Vectorization
 \end{IEEEkeywords}
 
 
@@ -434,20 +440,21 @@ Email: thchittenden@cmu.edu}}
 \section{Introduction}
 
 \subsection{The Opportunity}
-  In recent years web browsers have become a platform for a larger range of
-  applications many of which are numerically or graphics intensive in
-  nature. As a result there's been a push to make JavaScript more performant.
-  In this vain Intel, Google, and Mozilla developed an API called SIMD.js which
-  can be used to efficently perform SIMD computation. %CIT0
+  In recent years web browsers have become a platform for a larg range of
+  applications, many of which are numerically or graphically intensive in
+  nature. As a result there has been a push to make JavaScript more performant.
+  In this vein, Intel, Google, and Mozilla developed an API called SIMD.js \cite{simdjs} that
+  provides architecture agnostic bindings in JavaScript to vector instructions.
 
   While this API is certainly useful and can improve performance, vectorized
-  code is harder to read and produce. Moreover it's been demonstrated that
-  automatic loop vectorization is possible in other languages, and so the
-  question arose whether we could do the same for JavaScript.
+  code is significantly harder to read and maintain than its scalar counterpart.
+  Moreover, it's been demonstrated that automatic loop vectorization is possible
+  in other languages, and so the question arose whether we could do the same
+  for JavaScript.
 
 \subsection{Approach}
 
-  To tackle the problem we set out to write a source to source optimizer in the
+  To tackle the problem we set out to write a source-to-source optimizer in the
   form of a JavaScript library. Our library, \textit{Vectorize.js}, takes in
   any function, the source of which is acquired using the Esprima parser,
   performs outer loop vectorization, and then rebinds the optimized version of
@@ -457,7 +464,7 @@ Email: thchittenden@cmu.edu}}
 
   Due to the relative recency of SIMD.js's development there are not many
   users. Probably the most signifcant user of the API is Mozilla's LLVM to
-  JavaScript compiler Emscripten.
+  JavaScript compiler Emscripten \cite{emscripten}.
 
 \subsection{Contributions}
 
@@ -876,7 +883,6 @@ Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
 % 0.5em minus 0.4em\relax Harlow, England: Addison-Wesley, 1999.
 %\end{thebibliography}
 
-
 % Note that IEEE does not put floats in the very first column - or typically
 % anywhere on the first page for that matter. Also, in-text middle ("here")
 % positioning is not used. Most IEEE journals use top floats exclusively.
@@ -899,11 +905,6 @@ Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
 %
 
 % use section* for acknowledgement
-\section*{Acknowledgment}
-
-
-The authors would like to thank...
-
 
 % Can use something like this to put references on a page
 % by themselves when using endfloat and the captionsoff option.
@@ -920,6 +921,10 @@ The authors would like to thank...
 %\IEEEtriggercmd{\enlargethispage{-5in}}
 
 % references section
+
+\bibliographystyle{amsplain}
+\bibliography{main.bib}
+
 
 % that's all folks
 \end{document}
