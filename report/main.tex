@@ -744,6 +744,15 @@ Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
 \end{table}
 
 \section{Surprises}
+
+We were worried going into the project that perhaps the overhead of creating
+vectors and performing calls to operate on them would be too high to provide
+any speed up, but were proven wrong by our results. This observation is
+probably due to the way SpiderMonkey optimizes calls to SIMD.js. That said we
+did find that we were able to improve our performance by removing extraneous
+vector constructions, such as we mentioned in our discussion of induction
+variables.
+
 \section{Lessons Learned}
 
 One of the most important lessons we picked up on our endeavor was the value
