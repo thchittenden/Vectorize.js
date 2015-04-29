@@ -440,11 +440,12 @@ not diminish speed in IO bound loops.
 \section{Introduction}
 
 \subsection{The Opportunity}
-  In recent years web browsers have become a platform for a larg range of
+  In recent years web browsers have become a platform for a larger range of
   applications, many of which are numerically or graphically intensive in
-  nature. As a result there has been a push to make JavaScript more performant.
-  In this vein, Intel, Google, and Mozilla developed an API called SIMD.js \cite{simdjs} that
-  provides architecture agnostic bindings in JavaScript to vector instructions.
+  nature. As a result there has been a push to make JavaScript more performant
+  In this vein, Intel, Google, and Mozilla developed an API called SIMD.js
+  \cite{simdjs} that provides architecture agnostic bindings in JavaScript to
+  vector instructions.
 
   While this API is certainly useful and can improve performance, vectorized
   code is significantly harder to read and maintain than its scalar counterpart.
@@ -463,7 +464,7 @@ not diminish speed in IO bound loops.
 \subsection{Related Works}
 
   Due to the relative recency of SIMD.js's development there are not many
-  users. Probably the most signifcant user of the API is Mozilla's LLVM to
+  users. Probably the most significant user of the API is Mozilla's LLVM to
   JavaScript compiler Emscripten \cite{emscripten}.
 
 \subsection{Contributions}
@@ -480,16 +481,39 @@ The overall process for vectorizing loops was the following:
 \item Generate Javascript from the AST using Escodegen\cite{escodegen}.
 \end{itemize}
 
-The implementation was split into two major sections: dependency analysis and
-code vectorization. 
+\subsection{Vectorization}
+Our initial approach to vectorization was based on a set of inference rules we
+derived that provided transformations for how to convert expressions into
+equivalent 4-wide vector expressions. As our approach developed to focus more
+on efficiency and to support a wider variety of JavaScript language constructs,
+our implementation diverged from these original inference rules. At this time
+we support vectorization of the following constructs:
+\begin{itemize}
+\item Binary Operators: +, -, \*, /, <, <=, ==, >=, >
+\item Unary Operators: ++, --
+\item Reductions: +, -, \*, /
+\item Nested loops
+\item Conditionals with loop invariant tests
+\end{itemize}
+If at any point our library determines it is unsafe to vectorize a function it
+fails and returns a reference to the original function thereby not breaking the
+code.
 
-\subsection{Dependency Analysis}
+\subsubsection{Odd Sized Arrays}
+In order to support arrays that are not a multiple of the vector size we
+updated the bounds of the loop to perform as many vector sized chunks of work
+as possible and then appended the original serial loop to the end of the
+vectorized loop that picked up where the vectorized version left off. While
+this approach doubled code size, it allowed us to avoid any extra expensive
+conditionals in the loop we're vectorizing.
+
 
 \subsection{Detecting Reductions}
 
-  One type of optimization that our library is supports the vectorization of
-  ``reduce'' operations. Reductions are combinations of a series of data using
-  an associative operator. In it's simplest form this might look as follows,
+One type of optimization that our library supports is the vectorization of
+``reduce'' operations. Reductions are combinations of a series of data elements
+using an associative operator. In it's simplest form this might look as
+follows,
 \begin{verbatim}
 var x = 0;
 for (var i = 0; i < 100; i++) {
@@ -509,8 +533,9 @@ function fn(args) {
     }
     return sum;
 }
+
 \end{verbatim}
-Our goal was to be able to detect which assigments were part of a reduction and
+Our goal was to be able to detect which assignments were part of a reduction and
 whether these reductions were safe to vectorize.
 To detect reductions we reformulated the problem as graph dependency
 problem. Our first attempt at detecting these reductions was to look for
@@ -525,11 +550,13 @@ for (var i = 0; i < 100; i++) {
 While this is a simple example, these sorts of cases often appear with nested
 loops. The problem with our algorithm was that although \texttt{x = x + 1}
 depends on itself it is not a cross iteration dependence because \texttt{x} is
-redefined in between.
+redefined in between. To remedy the problem we had distinguish cross iteration
+dependencies and only flag strongly connected components as reductions if any
+node had such a dependence.
 Once we had the reductions the next step was verifying that we could actually
 vectorize them safely. There were a number of cases in which our library deems
-vectorization unsafe, but we'll hightlight a subset here. The first is that all
-assignemnts must use the same class of operations, i.e subtraction and addition
+vectorization unsafe, but we'll highlight a subset here. The first is that all
+assignments must use the same class of operations, i.e subtraction and addition
 or division and multiplication. For example the following is unsafe,
 \begin{verbatim}
 for (var i = 0; i < 100; i++) {
@@ -538,11 +565,14 @@ for (var i = 0; i < 100; i++) {
     y = z - x;
 }
 \end{verbatim}
-Here every assignment is part of the same reduction, but the assignemnt to
+Here every assignment is part of the same reduction, but the assignment to
 \texttt{z} uses a different class of operation which makes it impossible to
-combine the values in the resulting vector. Another consideration, was making
-sure that no intermidate steps of the computation are ever stored, since the
-vectorized version of the loop may never compute those values.
+combine the values in the resulting vector.
+
+Another consideration, was making sure that no intermediate steps of the
+computation are ever stored, since the vectorized version of the loop may never
+compute those values. Once we had the dependence graph built, this was as
+simple as checking that arrays never depended on scalars from a reduction.
 
 \subsection{Vectorization}
 Our initial approach to vectorization was based on a set of inference rules we
@@ -562,13 +592,13 @@ If at any point our library determines it is unsafe to vectorize a function it
 fails and returns a reference to the original function thereby not breaking the
 code.
 
-\subsubsection{Odd Sized Arrays}
-In order to support arrays that are not a multiple of the vector size we
-updated the bounds of the loop to perform as many vector sized chunks of work
-as possible and then appended the original serial loop to the end of the
-vectorized loop that picked up where the vectorized version left off. While
-this approach doubled code size, it allowed us to avoid any extra expensive
-conditionals in the loop we're vectorizing.
+\subsection{Dependence Analysis}
+
+One of the concerns when validating loops was checking that cross iteration
+dependencies between arrays were larger than the vector size. To this end we
+implemented Lamport's algorithm. Although this approach was simple, it is
+sufficiently separated from the rest of code that we could easily integrate more
+intricate tests.
 
 \section{Experimental Setup}
 
@@ -577,14 +607,14 @@ QUnit\cite{qunit} test suite with 50 tests encompassing a large set of possible
 loop operations. We continually tested against this set of tests to ensure our
 optimizations were not breaking any code. This page can be found at
 \url{http://www.contrib.andrew.cmu.edu/~mdehesaa/745/tests/tests.html}. Each
-test contains a log of both the scalar and vectorized versions of the code. 
+test contains a log of both the scalar and vectorized versions of the code.
 
 To test performance of our code we created a suite of benchmarks testing
 various loops that compared our vectorized code to both the scalar code and a
 hand vectorized version. It should be noted that since SIMD.js is only
 supported in the Spidermonkey\cite{spidermonkey} engine, any performance tests must be conducted
 using either a browser that uses SpiderMonkey (for example, Firefox) or the
-SpiderMonkey Javascript shell.  We chose to perform our tests in the
+SpiderMonkey JavaScript shell.  We chose to perform our tests in the
 SpiderMonkey shell as this provided the most stable testing environment. We
 utilized the Benchmark.js library in order to provide statistically significant
 results.
@@ -593,7 +623,7 @@ One limitation with performance testing is how high level a language JavaScript
 is. Because it's interpreted, it's very hard to to tell how the JavaScript function will be
 compiled to machine code and what optimizations will be applied to it. In our
 performance tests this is evident as on some tests we see speedup as high as 10x
-which is clearly impossible as a result of applying 4-wide vectoriztion!
+which is clearly impossible as a result of applying 4-wide vectorization!
 
 \section{Experimental Evaluation}
 
@@ -609,7 +639,7 @@ roofline model generated on our test machine: a mid-2012 Macbook Pro with SSE4.
 
 \begin{figure}[!t]
     \centering
-    \includegraphics[width=2.5in]{roofline1}
+    \includegraphics[width=3.5in]{roofline1}
     \caption{Roofline model of hand-tuned JavaScript using both optimized vector loads and naive vector construction}
 \end{figure}
 
@@ -627,7 +657,7 @@ SIMD implementation.
 
 \begin{figure}[!t]
     \centering
-    \includegraphics[width=2.5in]{roofline2}
+    \includegraphics[width=3.5in]{roofline2}
     \caption{Roofline model of auto-generated vector code vs. hand-tuned vector code}
 \end{figure}
 
@@ -650,29 +680,6 @@ contrast, have a very high computational complexity and show us how the
 JavaScript engine reacts to a tight inner loop adding a constant every
 iteration and a tight inner loop adding a variable every iteration.
 
-\subsection{Local Variables}
-In order to achieve vectorization, our library generates temporaries to
-hold SIMD vectors corresponding to various indices. This allows us to avoid
-reading the array multiple times to construct identical vectors. In the first
-iteration of our library we assigned directly to these temporaries instead
-of declaring them first. This resulted in the JavaScript engine scanning the
-current environment for variables of that name to overwrite every time we
-created a new temporary. When we observed a nearly 40x slowdown vs. scalar
-code we suspected this may be a problem! By converting all temporary assignments
-to declare the temporary as local we significantly sped up the code. Table
-1 summarizes the gains from this optimization.
-
-\begin{table}[!t]
-\centering
-\caption{}
-\begin{tabular}{|l||c|c|c|c|}
-\hline
-Benchmark & Scalar & Hand-Tuned & Global & Local \\ \hline
-Map +2 & 0.059ms & 0.192ms & 22.133ms & 9.749ms \\ \hline
-Map Inner Loop 1 & 8.819ms & 3.798ms & 299.308ms & 13.824ms \\ \hline
-Map Inner Loop 2 & 25.319ms & 2.357ms & 389.091ms & 11.714ms \\ \hline
-\end{tabular}
-\end{table}
 
 \subsection{Index Efficiency}
 Our first approach to vectorization was to transform the induction variable
@@ -706,10 +713,10 @@ for (int i = 0; i + 3 < len; i += 4) {
 \end{verbatim}
 
 In Table 2 we present results for this optimization. We see in the general case
-this optimization reduced our execution time by about 0.8ms howver in the
+this optimization reduced our execution time by about 0.8ms however in the
 simple map (+2) operation we reduced our execution time by over 20x. This is
-likely due to the javascript engine being able to recognize the loop in the
-second case and optimizing much more aggresively.
+likely due to the JavaScript engine being able to recognize the loop in the
+second case and optimizing much more aggressively.
 
 \begin{table}[!t]
 \centering
@@ -731,7 +738,7 @@ to \texttt{eval} this code in order to convert it to JavaScript again. We found
 however that even when our optimization was producing identical code to the
 hand-tuned versions, it was at an over 3x speed disadvantage. Inspecting the
 SpiderMonkey metadata for our generated function we found that it was treating
-it as a "Lazy" function and as we suspect, not optimizing it as aggresively as
+it as a "Lazy" function and as we suspect, not optimizing it as aggressively as
 the non-\texttt{eval}'d functions. In order to mitigate this we converted our
 function source to JavaScript functions by using the Function constructor which
 we expected to have more standardized results. We found this made a significant
@@ -757,45 +764,45 @@ Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
 \section{Surprises}
 \section{Lessons Learned}
 
-  One of the most important lessons we picked up on our endeavor was the value
-  of an intermediate representation specifically built towards compiler
-  optimizations. While working at such a high level does provide certain
-  niceties, such as being able to trivially identify loops, there a many more
-  burdens that come with it.
+One of the most important lessons we picked up on our endeavor was the value
+of an intermediate representation specifically built towards compiler
+optimizations. While working at such a high level does provide certain
+niceties, such as being able to trivially identify loops, there a many more
+burdens that come with it.
 
-  JavaScript is a language with very complicated semantics many of which
-  JavaScript developers exploit. These semantics forced us to make a number of
-  simplifying assumptions which a production grade compiler should not. For
-  example, to safely vectorize loops an important consideration is a pointer
-  aliasing. While this problem is challenging and has mostly imperfect
-  solutions for languages such as C, Javascript's semantics greatly complicate
-  the matter.  Thanks to Javascript's ``variable hoisting'' not only can
-  programmers use variables which are not defined in the given scope, they can
-  add them to the scope at runtime. As a result, for sake of not embarking on
-  an entirely different project, our optimizer makes the assumptions that
-  identifiers with distinct names will point to distinct structures.
+JavaScript is a language with very complicated semantics many of which
+JavaScript developers exploit. These semantics forced us to make a number of
+simplifying assumptions which a production grade compiler should not. For
+example, to safely vectorize loops an important consideration is a pointer
+aliasing. While this problem is challenging and has mostly imperfect
+solutions for languages such as C, JavaScript's semantics greatly complicate
+the matter.  Thanks to JavaScript's ``variable hoisting'' not only can
+programmers use variables which are not defined in the given scope, they can
+add them to the scope at runtime. As a result, for sake of not embarking on
+an entirely different project, our optimizer makes the assumptions that
+identifiers with distinct names will point to distinct structures.
 
-  Moreover, the fact that JavaScript is dynamically typed and overloads all
-  infix operators makes it virtually impossible to determine whether a given
-  expression will always evaluate to a floating point value without performing
-  some sort of interprocedural analysis. Take the following as an example,
-  \begin{verbatim}
-    function foo (var arg) {
-      for (var i = 0; i < 5; i++) {
-        arg[i] += 1;
-      }
-      return arg;
+Moreover, the fact that JavaScript is dynamically typed and overloads all
+infix operators makes it virtually impossible to determine whether a given
+expression will always evaluate to a floating point value without performing
+some sort of inter-procedural analysis. Take the following as an example,
+\begin{verbatim}
+  function foo (var arg) {
+    for (var i = 0; i < 5; i++) {
+      arg[i] += 1;
     }
-  \end{verbatim}
-  If a user were to call $\texttt{foo([1, 2])}$ we could safely vectorize the
-  funciton, but if the users uses it as $\texttt{foo(['bar', 'baz'])}$ we could
-  not, even though they both are valid uses of the function.
+    return arg;
+  }
+\end{verbatim}
+If a user were to call $\texttt{foo([1, 2])}$ we could safely vectorize the
+function, but if the users uses it as $\texttt{foo(['bar', 'baz'])}$ we could
+not, even though they both are valid uses of the function.
 
-  It's resoundingly clear that to build a production grade version of our tool
-  a significant portion of time would have to be allocated dealing with the
-  intricacies of JavaScript. In retrospect at the onset of our development we
-  should have clearly outlined not only the features of JavaScript which we
-  were support, but those we were ignoring them.
+It's resoundingly clear that to build a production grade version of our tool
+a significant portion of time would have to be allocated dealing with the
+intricacies of JavaScript. In retrospect at the onset of our development we
+should have clearly outlined not only the features of JavaScript which we
+were aiming to support, but those we were ignoring them.
 
 \section{Future Work}
 
