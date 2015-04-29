@@ -489,9 +489,9 @@ on efficiency and to support a wider variety of JavaScript language constructs,
 our implementation diverged from these original inference rules. At this time
 we support vectorization of the following constructs:
 \begin{itemize}
-\item Binary Operators: +, -, \*, /, <, <=, ==, >=, >
+\item Binary Operators: +, -, *, /, \textless, \textless=, ==, \textgreater=, >
 \item Unary Operators: ++, --
-\item Reductions: +, -, \*, /
+\item Reductions: +, -, *, /
 \item Nested loops
 \item Conditionals with loop invariant tests
 \end{itemize}
@@ -573,24 +573,6 @@ Another consideration, was making sure that no intermediate steps of the
 computation are ever stored, since the vectorized version of the loop may never
 compute those values. Once we had the dependence graph built, this was as
 simple as checking that arrays never depended on scalars from a reduction.
-
-\subsection{Vectorization}
-Our initial approach to vectorization was based on a set of inference rules we
-derived that provided transformations for how to convert expressions into
-equivalent 4-wide vector expressions. As our approach developed to focus more
-on efficiency and to support a wider variety of JavaScript language constructs,
-our implementation diverged from these original inference rules. At this time
-we support vectorization of the following construcs:
-\begin{itemize}
-\item Binary Operators: +, -, *, /, \textless, \textless=, ==, \textgreater=, \textgreater
-\item Unary Operators: ++, --
-\item Reductions: +, -, *, /
-\item Nested loops
-\item Conditionals with loop invariant tests
-\end{itemize}
-If at any point our library determines it is unsafe to vectorize a function it
-fails and returns a reference to the original function thereby not breaking the
-code.
 
 \subsection{Dependence Analysis}
 
