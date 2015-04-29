@@ -104,7 +104,7 @@
 
 % *** CITATION PACKAGES ***
 %
-%\usepackage{cite}
+\usepackage{cite}
 % cite.sty was written by Donald Arseneau
 % V1.6 and later of IEEEtran pre-defines the format of the cite.sty package
 % \cite{} output to follow that of IEEE. Loading the cite package will
@@ -433,11 +433,38 @@ Email: tchitten@andrew.cmu.edu}}
 \section{Introduction}
 
 \subsection{The Opportunity}
+  In recent years web browsers have become a platform for a larger range of
+  applications many of which are numerically or graphics intensive in
+  nature. As a result there's been a push to make JavaScript more performant.
+  In this vain Intel, Google, and Mozilla developed an API called SIMD.js which
+  can be used to efficently perform SIMD computation. %CIT0
+
+  While this API is certainly useful and can improve performance, vectorized
+  code is harder to read and produce. Moreover it's been demonstrated that
+  automatic loop vectorization is possible in other languages, and so the
+  question arose whether we could do the same for JavaScript.
+
 \subsection{Approach}
+
+  To tackle the problem we set out to write a source to source optimizer in the
+  form of a JavaScript library. Our library, \textit{Vectorize.js}, takes in
+  any function, the source of which is acquired using the Esprima parser,
+  performs outer loop vectorization, and then rebinds the optimized version of
+  the function to the DOM.
+
 \subsection{Related Works}
+
+  Due to the relative recency of SIMD.js's development there are not many
+  users. Probably the most signifcant user of the API is Mozilla's LLVM to
+  JavaScript compiler Emscripten.
+
+
 \subsection{Contributions}
 
 \section{Approach Extended}
+
+
+
 \section{Experimental Setup}
 \section{Experimental Evaluation}
 \section{Surprises}
@@ -446,12 +473,44 @@ Email: tchitten@andrew.cmu.edu}}
   One of the most important lessons we picked up on our endeavor was the value
   of an intermediate representation specifically built towards compiler
   optimizations. While working at such a high level does provide certain
-  niceties, there a many more burdens that come with it.  JavaScript is a
-  language with very complicated semantics many of which make it very hard to
-  make assumptions about the code, ``variable hoisting'' for example. It's
-  resoundingly clear that to build a production grade version of our tool a
-  significant portion of time would have to be allocated dealing with the
-  intricacies of JavaScript.
+  niceties, such as being able to trivially identify loops, there a many more
+  burdens that come with it.
+
+  JavaScript is a language with very complicated semantics many of which
+  JavaScript developers exploit. These semantics forced us to make a number of
+  simplifying assumptions which a production grade compiler should not. For
+  example, to safely vectorize loops an important consideration is a pointer
+  aliasing. While this problem is challenging and has mostly imperfect
+  solutions for languages such as C, Javascript's semantics greatly complicate
+  the matter.  Thanks to Javascript's ``variable hoisting'' not only can
+  programmers use variables which are not defined in the given scope, they can
+  add them to the scope at runtime. As a result, for sake of not embarking on
+  an entirely different project, our optimizer makes the assumptions that
+  identifiers with distinct names will point to distinct structures.
+
+  Moreover, the fact that JavaScript is dynamically typed and overloads all
+  infix operators makes it virtually impossible to determine whether a given
+  expression will always evaluate to a floating point value without performing
+  some sort of interprocedural analysis. Take the following as an example,
+  \begin{verbatim}
+    function foo (var arg) {
+      for (var i = 0; i < 5; i++) {
+        arg[i] += 1;
+      }
+      return arg;
+    }
+  \end{verbatim}
+  If a user were to call $\texttt{foo([1, 2])}$ we could safely vectorize the
+  funciton, but if the users uses it as $\texttt{foo(['bar', 'baz'])}$ we could
+  not, even though they both are valid uses of the function.
+
+  It's resoundingly clear that to build a production grade version of our tool
+  a significant portion of time would have to be allocated dealing with the
+  intricacies of JavaScript. In retrospect at the onset of our development we
+  should have clearly outlined not only the features of JavaScript which we
+  were support, but those we were ignoring them.
+
+
 
 % needed in second column of first page if using \IEEEpubid
 %\IEEEpubidadjcol
@@ -529,6 +588,13 @@ Email: tchitten@andrew.cmu.edu}}
 %\hline
 %\end{tabular}
 %\end{table}
+
+ % TAG  SOURCE
+ % CIT0 https://hacks.mozilla.org/2014/10/introducing-simd-js/
+%\bibitem{IEEEhowto:kopka}
+%H.~Kopka and P.~W. Daly, \emph{A Guide to \LaTeX}, 3rd~ed.\hskip 1em plus
+% 0.5em minus 0.4em\relax Harlow, England: Addison-Wesley, 1999.
+%\end{thebibliography}
 
 
 % Note that IEEE does not put floats in the very first column - or typically
