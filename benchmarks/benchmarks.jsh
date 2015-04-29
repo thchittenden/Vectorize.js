@@ -4,6 +4,7 @@ benchmarks = [];
 load('../bin/vectorize.browser.js');
 load('../lib/benchmark.js');
 load('map_basic.js');
+load('reductions.js');
 
 // Whether we should output the functions or not.
 var debug = scriptArgs.indexOf('-debug') > -1;
