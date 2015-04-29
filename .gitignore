@@ -2,3 +2,6 @@ tests.html
 bin/
 node_modules/
 *.swp
+*.out
+*.aux
+report.log
