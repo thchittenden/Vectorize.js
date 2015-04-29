@@ -552,9 +552,9 @@ on efficiency and to support a wider variety of JavaScript language constructs,
 our implementation diverged from these original inference rules. At this time
 we support vectorization of the following construcs:
 \begin{itemize}
-\item Binary Operators: +, -, \*, /, <, <=, ==, >=, >
+\item Binary Operators: +, -, *, /, \textless, \textless=, ==, \textgreater=, \textgreater
 \item Unary Operators: ++, --
-\item Reductions: +, -, \*, /
+\item Reductions: +, -, *, /
 \item Nested loops
 \item Conditionals with loop invariant tests
 \end{itemize}
@@ -797,6 +797,34 @@ Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
   should have clearly outlined not only the features of JavaScript which we
   were support, but those we were ignoring them.
 
+\section{Future Work}
+
+In future development of Vectorize.js we would like to support more language
+constructs as well as expand dependency analysis to support more complex indexing.
+The following is a short list of features we would like to support:
+\begin{itemize}
+    \item Conditionals with variant tests and conditional expressions.
+    \item Inlining and vectorizing function calls.
+    \item min/max operator/reduction support. 
+    \item More dependency analysis tests to allow more complicated indexes.
+    \item A mode where the user may request vectorization regardless of 
+        safety checks.
+\end{itemize}
+
+In addition we would like to compare our results against similar code generated
+by emscripten to Asm.js. This may give a good indication as to the best method 
+of achieving fast JavaScript.
+
+\section{Conclusion}
+
+We have seen that Vectorize.js can be used to achieve a speedup in a variety 
+of loops, however it struggles to fully support the wide range of JavaScript
+language constructs. A production-quality source-to-source vectorizer would 
+require months of work to ensure both safety and speed and would likely not be
+an effective use of resources in order to speed up JavaScript. An approach in 
+a more structured language such as Asm.js, which could deal with a smaller language
+and make more guarantees about types, would allow its developers to focus more on
+achieving efficiency and less on handling JavaScript intricacies. 
 
 
 % needed in second column of first page if using \IEEEpubid
