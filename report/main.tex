@@ -128,7 +128,7 @@
 % *** GRAPHICS RELATED PACKAGES ***
 %
 \ifCLASSINFOpdf
-  \usepackage[pdftex]{graphicx}
+  % \usepackage[pdftex]{graphicx}
   % declare the path(s) where your graphic files are
   % \graphicspath{{../pdf/}{../jpeg/}}
   % and their extensions so you won't have to specify these with
@@ -348,6 +348,7 @@
 % correct bad hyphenation here
 \hyphenation{op-tical net-works semi-conduc-tor}
 
+\usepackage{hyperref}
 
 \begin{document}
 %
@@ -472,10 +473,14 @@ changes in code will affect performance due to the large amount of intermediary
 processing that occurs in the JavaScript engine. One method of characterizing 
 the underlying platform is to use a roofline model. This model shows how as we
 vary the computational complexity of an operation (the X axis), its computational
-throughput changes (the Y axis). Below is the roofline model generated on a 
-mid-2012 Macbook Pro.
+throughput changes (the Y axis). In Figure 1 we present the roofline model
+generated on our test machine: a mid-2012 Macbook Pro with SSE4.
 
-\includegraphics{roofline1}
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=2.5in]{roofline1}
+    \caption{Figure 1}
+\end{figure}
 
 The distinction between the "SIMD" and "SIMD Naive" lines is that the "SIMD"
 version uses optimized vector load instructions while the "SIMD Naive" version
@@ -485,18 +490,104 @@ outperformed naively constructing the vectors at low computational complexities
 while they matched each other at higher complexities where the overhead of
 vector construction is much less significant. 
 
-Below we present the roofline model generated using the same operation as above 
-but comparing the hand-tuned SIMD implementation to our auto-generated SIMD
-implementation.
+In Figure 2 we present the roofline model generated using the same operation as
+above but comparing the hand-tuned SIMD implementation to our auto-generated
+SIMD implementation.
 
-\includegraphcis{roofline2}
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=2.5in]{roofline2}
+    \caption{Figure 2}
+\end{figure}
 
 We see that our auto-generated version produces identical results the hand 
 written version while requiring no additional effort to create. In both cases
 the vectorized version of the code achieved a nearly 4x speedup at approximately
 16 operations per byte. This corresponds to 64 operations per float. This is 
-a very large number for typical Javascript, but even on loops with as few as 
+a very large number for typical JavaScript, but even on loops with as few as 
 four operations per float, a nearly 2x speedup was observed.
+
+\subsection{Index Efficiency}
+While vectorizing code, there are many things to take into account in terms of
+generating efficient code. Our first approach to vectorization was to transform
+the induction variable into a vector of four consecutive steps of the induction
+variable and then index into the array using the vector accessors. Our code ended
+up looking like this:
+\begin{verbatim}
+for (int i = 0; i + 3 < len; i += 4) {
+    var temp_i = vec(i, i+1, i+2, i+3);
+    var temp_array = vec(array[temp_i.x], 
+                         array[temp_i.y], 
+                         array[temp_i.z],
+                         array[temp_i.w]);
+    ...
+}
+\end{verbatim}
+
+While this provided a very clean abstraction in the code, it turned out to be
+very inefficient as the round-trip overhead of creating a vector only to
+immediately deconstruct it was significant. In our second approach, We ended up
+tracking the induction variable separately from other vectors so we could avoid
+this overhead. The equivalent code after this optimization became:
+\begin{verbatim}
+for (int i = 0; i + 3 < len; i += 4) {
+    var temp_array = vec(array[i], 
+                         array[i+1], 
+                         array[i+2],
+                         array[i+3]);
+    ...
+}
+\end{verbatim}
+
+In Table 1 we present results for three benchmarks run using the two mentioned
+approaches.  We see in the general case this optimization reduced our execution
+time by about 0.8ms howver in a simple map (+2) operation we reduced our
+execution time by over 20x. This is likely due to the javascript engine being
+able to recognize the loop in the second case and optimizing much more
+aggresively.
+
+\begin{table}[!t]
+\centering
+\caption{}
+\begin{tabular}{|l||c|c|c|c|}
+\hline
+Benchmark & Scalar & Hand-Tuned & Approach 1 & Approach 2 \\ \hline
+Map +2 & 0.059ms & 0.192ms & 9.165ms & 0.358ms \\ \hline
+Map Inner Loop 1 & 8.819ms & 3.798ms & 13.112ms & 12.307ms \\ \hline
+Map Inner Loop 2 & 25.319ms & 2.357ms & 11.189ms & 10.362ms \\ \hline
+\end{tabular}
+\end{table}
+
+
+\subsection{Evil Eval}
+At the end of our vectorization pipeline, we receive a string from the code
+generator containing the vectorized function source. Our first inclination was
+to \texttt{eval} this code in order to convert it to JavaScript again. We found
+however that even when our optimization was producing identical code to the
+hand-tuned versions, it was at an over 3x speed disadvantage. Inspecting the
+SpiderMonkey metadata for our generated function we found that it was treating
+it as a "Lazy" function and as we suspect, not optimizing it as aggresively as
+the non-\texttt{eval}'d functions. In order to mitigate this we converted our
+function source to JavaScript functions by using the Function constructor which
+we expected to have more standardized results. We found this made a significant
+improvement in runtimes such that our auto generated versions performed nearly
+identically to the hand-tuned versions.
+
+In Table 2 we present the results of this modification. This optimization
+completely closed the gap between the hand-tuned version and the auto-generated
+one.
+
+\begin{table}[!t]
+\centering
+\caption{}
+\begin{tabular}{|l||c|c|c|c|}
+\hline
+Benchmark & Scalar & Hand-Tuned & Eval & Function \\ \hline
+Map +2 & 0.059ms & 0.192ms & 0.367ms & 0.197ms \\ \hline
+Map Inner Loop 1 & 8.819ms & 3.798ms & 12.489ms & 3.641ms \\ \hline
+Map Inner Loop 2 & 25.319ms & 2.357ms & 10.362ms & 2.401ms \\ \hline
+\end{tabular}
+\end{table}
 
 \section{Surprises}
 \section{Lessons Learned}
