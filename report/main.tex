@@ -469,6 +469,11 @@ not diminish speed in IO bound loops.
 
 \subsection{Contributions}
 
+We have implemented a JavaScript library that allows the user to transform 
+loops to use 4-wide SIMD using the SIMD.js bindings. This transformation
+enables up to a 4x speedup for loops with high computational complexity. 
+This library supports typical vector operations as well as +,-,*,/ reductions.
+
 \section{Approach Extended}
 
 The overall process for vectorizing loops was the following:
