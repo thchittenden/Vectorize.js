@@ -191,23 +191,6 @@ tests.push({
     fn: function 
 }); */
 
-tests.push({
-    name: 'Multiple Reductions',
-    args : [],
-    fn: function fn (args) {
-        var w = 5;
-        var z = 10;
-        var a = 15;
-        var b = 20;
-        for (var i = 0; i < 100; i++) {
-            w = z + 2;
-            z = w;
-            a = b / 20;
-            b = a * 15;
-        }
-        return w + b;
-    }
-});
 
 tests.push({
     name: 'While',
@@ -220,21 +203,6 @@ tests.push({
             }
         }
         return args.arr;
-    }
-});
-
-tests.push({
-    name: 'Reductions That Read',
-    args: [0, 1, 2, 3, 4, 5, 6, 7],
-    fn: function fn (args) {
-        var x, y, z = 0, sum = 0;
-        for (var i = 0; i < args.length; i++) {
-            sum = z + args[i];
-            z = sum + y + z + args[i];
-            y = args[i] + x;
-            x -= args[i] + z;
-        }
-        return sum;
     }
 });
 
@@ -279,18 +247,6 @@ tests.push({
     }
 });
 
-tests.push({
-    name: 'Reduction in property',
-    args: [0, 1, 2, 3, 4, 5, 6, 7],
-    fn: function fn (args) {
-        var obj = { x: { y: 0 } };
-        for (var i = 0;  i < args.length; i++) {
-            obj.x.y += args[i];
-        }
-        return args;
-    }
-});
-
 // The second index is 0 so the dependency checker should fail this.
 tests.push({
     name: 'Weird indexes',
@@ -309,6 +265,17 @@ tests.push({
     fn: function fn (args) {
         for (var i = 0; i < args.length; i++) {
             args[(2*i + 2)/2 - 1] = 1 + args[i + 2 - (i * 2)/4 - i/2 + i - 2]; 
+        }
+        return args;
+    }
+});
+
+tests.push({
+    name: 'Dangerous Dependency One',
+    args: new Array(12).fill(5),
+    fn: function fn (args) {
+        for (var i = 0; i < args.length/3; i++) {
+            args[3*i] += args[2*i];
         }
         return args;
     }
